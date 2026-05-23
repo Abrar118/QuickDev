@@ -60,11 +60,10 @@ mod tests {
 
         for table in [
             "projects",
-            "sessions",
-            "session_items",
+            "applications",
+            "folders",
+            "terminals",
             "integrations",
-            "project_preferences",
-            "restore_runs",
         ] {
             let exists = sqlx::query_scalar::<_, i64>(
                 r#"
