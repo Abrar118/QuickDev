@@ -1,16 +1,27 @@
 import { createBrowserRouter } from "react-router-dom";
-import { Toaster } from "./components/ui/sonner";
+import { Toaster } from "./lib/toast";
 import Layout from "./components/layout";
 import { ThemeProvider } from "./components/theme-provider";
 import Dashboard from "./pages/dashboard";
 import ProjectManagement from "./pages/project-management";
-import TaskManagement from "./pages/task-management";
-import WorkTimer from "./pages/work-timer";
 import Settings from "./pages/settings";
+import WorkTimer from "./pages/work-timer";
+import ErrorPage from "./pages/error-page";
 
 const router = createBrowserRouter([
   {
     path: "/",
+    errorElement: (
+      <ThemeProvider
+        attribute="class"
+        defaultTheme="system"
+        enableSystem
+        disableTransitionOnChange
+      >
+        <ErrorPage />
+        <Toaster position="top-center" />
+      </ThemeProvider>
+    ),
     element: (
       <ThemeProvider
         attribute="class"
@@ -19,7 +30,7 @@ const router = createBrowserRouter([
         disableTransitionOnChange
       >
         <Layout />
-        <Toaster />
+        <Toaster position="top-center" />
       </ThemeProvider>
     ),
     children: [
@@ -32,16 +43,12 @@ const router = createBrowserRouter([
         element: <ProjectManagement />,
       },
       {
-        path: "tasks",
-        element: <TaskManagement />,
+        path: "settings",
+        element: <Settings />,
       },
       {
         path: "timer",
         element: <WorkTimer />,
-      },
-      {
-        path: "settings",
-        element: <Settings />,
       },
     ],
   },

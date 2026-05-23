@@ -1,6 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open } from "@tauri-apps/plugin-shell";
-import { ask, message, save } from "@tauri-apps/plugin-dialog";
+import {
+  ask,
+  message,
+  save,
+  open as DialogOpen,
+} from "@tauri-apps/plugin-dialog";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import {
   isPermissionGranted,
@@ -10,6 +15,7 @@ import {
 import type { Project } from "../types/project";
 import type { Task } from "../types/task";
 import type { TimeLog } from "../types/time-log";
+import type { Integration } from "../types/integration";
 
 // Project API
 export async function getProjects(): Promise<Project[]> {
@@ -23,37 +29,76 @@ export async function getProjects(): Promise<Project[]> {
 
 export async function createProject(project: Project): Promise<Project> {
   try {
-    return await invoke<Project>("create_project", { project });
+    const applications = project.applications;
+    const folders = project.folders;
+    const terminals = project.terminals;
+
+    const projectWitoutAppFoldTerms = {
+      ...project,
+      applications: undefined,
+      folders: undefined,
+      terminals: undefined,
+    };
+
+    await invoke<boolean>("create_project", {
+      project: projectWitoutAppFoldTerms,
+      applications: applications,
+      folders: folders,
+      terminals: terminals,
+    });
+
+    return project;
   } catch (error) {
     console.error("Failed to create project:", error);
     throw error;
   }
 }
 
+export async function getProject(projectId: number): Promise<Project> {
+  try {
+    return await invoke<Project>("get_project", { projectId });
+  } catch (error) {
+    console.error("Failed to get project:", error);
+    throw error;
+  }
+}
+
 export async function updateProject(project: Project): Promise<void> {
   try {
-    await invoke<void>("update_project", { project });
+    await invoke<Project>("update_project", { project });
   } catch (error) {
     console.error("Failed to update project:", error);
     throw error;
   }
 }
 
-export async function deleteProject(projectId: string): Promise<void> {
+export async function deleteProject(projectId: number): Promise<void> {
   try {
-    await invoke<void>("delete_project", { projectId });
+    const deleted = await invoke<boolean>("delete_project", { projectId });
+    if (!deleted) {
+      throw new Error(`Project ${projectId} was not found`);
+    }
   } catch (error) {
     console.error("Failed to delete project:", error);
     throw error;
   }
 }
 
-export async function launchProject(projectId: string): Promise<void> {
+export async function launchProject(projectId: number): Promise<void> {
   try {
-    await invoke<void>("launch_project", { projectId });
+    const launched = await invoke<boolean>("launch_project", { projectId });
+    if (!launched) {
+      throw new Error("Project launch did not complete");
+    }
   } catch (error) {
     console.error("Failed to launch project:", error);
-    throw error;
+    if (typeof error === "string") {
+      throw new Error(error);
+    }
+    if (error instanceof Error) {
+      throw error;
+    }
+    throw new Error("Unknown launch error");
   }
 }
 
@@ -85,7 +130,7 @@ export async function updateTask(task: Task): Promise<void> {
   }
 }
 
-export async function deleteTask(taskId: string): Promise<void> {
+export async function deleteTask(taskId: number): Promise<void> {
   try {
     await invoke<void>("delete_task", { taskId });
   } catch (error) {
@@ -130,6 +175,33 @@ export async function createTimeLog(timeLog: TimeLog): Promise<TimeLog> {
     return await invoke<TimeLog>("create_time_log", { timeLog });
   } catch (error) {
     console.error("Failed to create time log:", error);
+    throw error;
+  }
+}
+
+export async function detectIntegrations(): Promise<Integration[]> {
+  try {
+    return await invoke<Integration[]>("detect_integrations");
+  } catch (error) {
+    console.error("Failed to detect integrations:", error);
+    throw error;
+  }
+}
+
+export async function listIntegrations(): Promise<Integration[]> {
+  try {
+    return await invoke<Integration[]>("list_integrations");
+  } catch (error) {
+    console.error("Failed to list integrations:", error);
+    throw error;
+  }
+}
+
+export async function getAvailableIntegrations(): Promise<Integration[]> {
+  try {
+    return await invoke<Integration[]>("get_available_integrations");
+  } catch (error) {
+    console.error("Failed to get available integrations:", error);
     throw error;
   }
 }
@@ -279,6 +351,29 @@ export async function openUrl(url: string): Promise<void> {
     await open(url);
   } catch (error) {
     console.error("Failed to open URL:", error);
+    throw error;
+  }
+}
+
+// file api
+export async function openFileDialog(
+  isDirectory: boolean,
+  options?: {
+    title?: string;
+    defaultPath?: string;
+  }
+): Promise<string | null> {
+  try {
+    return await DialogOpen({
+      title: options?.title ?? "Select File",
+      multiple: false,
+      directory: isDirectory,
+      defaultPath: options?.defaultPath ?? (isDirectory ? undefined : "C:\\"),
+      canCreateDirectories: isDirectory,
+      filters: [{ name: "All Files", extensions: ["*"] }],
+    });
+  } catch (error) {
+    console.error("Failed to open file dialog:", error);
     throw error;
   }
 }
