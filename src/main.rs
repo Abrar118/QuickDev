@@ -1,5 +1,6 @@
 mod adapters;
 mod config;
+mod fzf;
 mod launch;
 mod models;
 
