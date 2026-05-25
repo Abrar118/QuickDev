@@ -12,7 +12,11 @@ pub struct LaunchResult {
     pub error: Option<String>,
 }
 
-pub fn launch_project(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchResult> {
+pub fn launch_project(
+    config: &ProjectConfig,
+    project_root: &Path,
+    global_emulator: Option<&str>,
+) -> Vec<LaunchResult> {
     let mut results = Vec::new();
 
     for (i, terminal) in config.terminals.iter().enumerate() {
@@ -20,11 +24,12 @@ pub fn launch_project(config: &ProjectConfig, project_root: &Path) -> Vec<Launch
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         let resolved_path = resolve_terminal_path(project_root, &terminal.path);
+        let effective_emulator = terminal.emulator.as_deref().or(global_emulator);
         let result = launch_terminal(
             &resolved_path,
             terminal.command.as_deref(),
             i,
-            terminal.emulator.as_deref(),
+            effective_emulator,
         );
         results.push(LaunchResult {
             label: terminal.name.clone(),

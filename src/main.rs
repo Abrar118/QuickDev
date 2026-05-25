@@ -37,10 +37,13 @@ struct Cli {
 enum Commands {
     /// Create .quickdev.toml in the current directory and register the project
     Init,
-    /// Launch all terminals and applications for a project
+    /// Launch terminals and applications for a project
     Launch {
         /// Project name from the global index (omit to use current directory)
         project: Option<String>,
+        /// Launch all items without interactive selection
+        #[arg(long)]
+        all: bool,
     },
     /// List all indexed projects
     List,
@@ -107,7 +110,7 @@ fn main() {
 
     let result = match cli.command {
         Commands::Init => cmd_init(),
-        Commands::Launch { project } => cmd_launch(project),
+        Commands::Launch { project, all } => cmd_launch(project, all),
         Commands::List => cmd_list(),
         Commands::Add { kind } => cmd_add(kind),
         Commands::Remove { kind } => cmd_remove(kind),
@@ -165,11 +168,12 @@ fn cmd_init() -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_launch(project: Option<String>) -> Result<(), String> {
+fn cmd_launch(project: Option<String>, all: bool) -> Result<(), String> {
+    let global_path = global_config_path();
+    let global = load_global_config(&global_path)?;
+
     let (config, project_root) = match project {
         Some(name) => {
-            let global_path = global_config_path();
-            let global = load_global_config(&global_path)?;
             let entry = global
                 .projects
                 .iter()
@@ -193,7 +197,9 @@ fn cmd_launch(project: Option<String>) -> Result<(), String> {
         return Err("no terminals or applications configured".to_string());
     }
 
-    let results = launch::launch_project(&config, &project_root);
+    let _ = all; // will be used in Task 3 for fzf selective launch
+
+    let results = launch::launch_project(&config, &project_root, global.emulator.as_deref());
     print_launch_summary(&results);
 
     let any_success = results.iter().any(|r| r.success);
