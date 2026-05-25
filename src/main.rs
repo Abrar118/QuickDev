@@ -309,7 +309,11 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
     match selected.as_str() {
         "Terminal" => {
             let path = prompt("Path (. for current directory): ")?;
-            let path = if path.is_empty() { ".".to_string() } else { path };
+            let path = if path.is_empty() {
+                ".".to_string()
+            } else {
+                path
+            };
 
             let name = prompt("Name for this tab: ")?;
             if name.is_empty() {

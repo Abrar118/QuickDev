@@ -1,3 +1,19 @@
+# QuickDev project configuration
+# Edit this file directly or use: quickdev add, quickdev remove
+#
+# [project]
+#   name = Display name for this project
+#
+# [[terminals]]
+#   name    = Label for this terminal tab
+#   path    = Working directory relative to project root (e.g., ".", "./src")
+#   command = (optional) Startup command to run when the terminal opens
+#
+# [[applications]]
+#   name = Application display name
+#   path = Executable path or .app bundle (e.g., "/Applications/Cursor.app")
+#   args = (optional) Arguments list (e.g., ["."] to open project root)
+
 applications = []
 
 [project]
@@ -6,12 +22,7 @@ name = "QuickDev"
 [[terminals]]
 name = "dev"
 path = "."
-command = "cargo run -- --help"
-
-[[terminals]]
-name = "tests"
-path = "."
-command = "cargo test"
+command = "qd --help"
 
 [[terminals]]
 name = "second"

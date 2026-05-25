@@ -22,7 +22,10 @@ pub fn discover_apps() -> Vec<(String, String)> {
                         continue;
                     }
                     if file_name.ends_with(".app") {
-                        let name = file_name.strip_suffix(".app").unwrap_or(&file_name).to_string();
+                        let name = file_name
+                            .strip_suffix(".app")
+                            .unwrap_or(&file_name)
+                            .to_string();
                         apps.push((name, path.to_string_lossy().to_string()));
                     }
                 }

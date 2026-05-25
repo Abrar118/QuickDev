@@ -98,7 +98,11 @@ pub fn normalize_path(path: &str) -> String {
     path.to_string()
 }
 
-fn launch_terminal(resolved_path: &str, command: Option<&str>, tab_index: usize) -> Result<(), String> {
+fn launch_terminal(
+    resolved_path: &str,
+    command: Option<&str>,
+    tab_index: usize,
+) -> Result<(), String> {
     if !Path::new(resolved_path).exists() {
         return Err(format!("path not found: {resolved_path}"));
     }
@@ -132,7 +136,11 @@ fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
         .map_err(|e| format!("ghostty launch failed: {e}"))
 }
 
-fn run_in_platform_terminal(cwd: &str, command: Option<&str>, tab_index: usize) -> Result<(), String> {
+fn run_in_platform_terminal(
+    cwd: &str,
+    command: Option<&str>,
+    tab_index: usize,
+) -> Result<(), String> {
     let cmd_str = command.unwrap_or("");
 
     #[cfg(target_os = "macos")]
