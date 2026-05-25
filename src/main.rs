@@ -6,7 +6,7 @@ mod models;
 
 use clap::{Parser, Subcommand};
 use config::{
-    find_project_config, global_config_path, load_global_config, load_project_config,
+    resolve_project_config, global_config_path, load_global_config, load_project_config,
     save_global_config, save_project_config, unique_project_name,
 };
 use launch::LaunchResult;
@@ -40,10 +40,10 @@ enum Commands {
         #[command(subcommand)]
         kind: AddKind,
     },
-    /// Remove a terminal or application entry
+    /// Remove terminals/apps (interactive picker, or specify: remove terminal <name>)
     Remove {
         #[command(subcommand)]
-        kind: RemoveKind,
+        kind: Option<RemoveKind>,
     },
     /// Open .quickdev.toml in $EDITOR
     Edit,
@@ -162,7 +162,7 @@ fn cmd_launch(project: Option<String>) -> Result<(), String> {
         None => {
             let cwd = std::env::current_dir()
                 .map_err(|e| format!("cannot read current directory: {e}"))?;
-            let (config_path, root) = find_project_config(&cwd)?;
+            let (config_path, root) = resolve_project_config(&cwd)?;
             let config = load_project_config(&config_path)?;
             (config, root)
         }
@@ -237,7 +237,7 @@ fn cmd_list() -> Result<(), String> {
 
 fn cmd_add(kind: AddKind) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let (config_path, _root) = find_project_config(&cwd)?;
+    let (config_path, _root) = resolve_project_config(&cwd)?;
     let mut config = load_project_config(&config_path)?;
 
     match kind {
@@ -272,13 +272,13 @@ fn cmd_add(kind: AddKind) -> Result<(), String> {
     save_project_config(&config_path, &config)
 }
 
-fn cmd_remove(kind: RemoveKind) -> Result<(), String> {
+fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let (config_path, _root) = find_project_config(&cwd)?;
+    let (config_path, _root) = resolve_project_config(&cwd)?;
     let mut config = load_project_config(&config_path)?;
 
     match kind {
-        RemoveKind::Terminal { name } => {
+        Some(RemoveKind::Terminal { name }) => {
             let before = config.terminals.len();
             config.terminals.retain(|t| t.name != name);
             if config.terminals.len() == before {
@@ -286,7 +286,7 @@ fn cmd_remove(kind: RemoveKind) -> Result<(), String> {
             }
             println!("Removed terminal '{}'", name);
         }
-        RemoveKind::App { name } => {
+        Some(RemoveKind::App { name }) => {
             let before = config.applications.len();
             config.applications.retain(|a| a.name != name);
             if config.applications.len() == before {
@@ -294,14 +294,82 @@ fn cmd_remove(kind: RemoveKind) -> Result<(), String> {
             }
             println!("Removed application '{}'", name);
         }
+        None => {
+            return cmd_remove_interactive(config_path, config);
+        }
     }
 
     save_project_config(&config_path, &config)
 }
 
+fn cmd_remove_interactive(
+    config_path: PathBuf,
+    mut config: ProjectConfig,
+) -> Result<(), String> {
+    let mut items: Vec<String> = Vec::new();
+
+    for t in &config.terminals {
+        let cmd_part = t
+            .command
+            .as_ref()
+            .map(|c| format!(" ({c})"))
+            .unwrap_or_default();
+        items.push(format!("[terminal] {} — {}{}", t.name, t.path, cmd_part));
+    }
+    for a in &config.applications {
+        items.push(format!("[app] {} — {}", a.name, a.path));
+    }
+
+    if items.is_empty() {
+        return Err("no terminals or applications configured".to_string());
+    }
+
+    let selected =
+        fzf::fzf_select_multi(&items, "Select items to remove (TAB to toggle, ENTER to confirm):")?;
+
+    let mut removed_terminals = Vec::new();
+    let mut removed_apps = Vec::new();
+
+    for line in &selected {
+        if line.starts_with("[terminal] ") {
+            let name = line
+                .strip_prefix("[terminal] ")
+                .and_then(|s| s.split(" — ").next())
+                .unwrap_or("")
+                .to_string();
+            removed_terminals.push(name);
+        } else if line.starts_with("[app] ") {
+            let name = line
+                .strip_prefix("[app] ")
+                .and_then(|s| s.split(" — ").next())
+                .unwrap_or("")
+                .to_string();
+            removed_apps.push(name);
+        }
+    }
+
+    config
+        .terminals
+        .retain(|t| !removed_terminals.contains(&t.name));
+    config
+        .applications
+        .retain(|a| !removed_apps.contains(&a.name));
+
+    save_project_config(&config_path, &config)?;
+
+    for name in &removed_terminals {
+        println!("Removed terminal '{name}'");
+    }
+    for name in &removed_apps {
+        println!("Removed application '{name}'");
+    }
+
+    Ok(())
+}
+
 fn cmd_edit() -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let (config_path, _root) = find_project_config(&cwd)?;
+    let (config_path, _root) = resolve_project_config(&cwd)?;
 
     let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
 
