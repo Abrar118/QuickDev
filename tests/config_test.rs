@@ -106,3 +106,70 @@ fn unique_project_name_appends_suffix() {
     assert_eq!(unique_project_name("my-app", &config), "my-app-3");
     assert_eq!(unique_project_name("new-proj", &config), "new-proj");
 }
+
+#[test]
+fn save_project_config_adds_comment_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "test-proj".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    save_project_config(&config_path, &config).unwrap();
+    let content = std::fs::read_to_string(&config_path).unwrap();
+
+    assert!(
+        content.starts_with("# QuickDev project configuration"),
+        "should start with comment header, got:\n{content}"
+    );
+    assert!(content.contains("[project]"));
+    assert!(content.contains("name = \"test-proj\""));
+}
+
+#[test]
+fn save_project_config_preserves_existing_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "test-proj".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    save_project_config(&config_path, &config).unwrap();
+
+    let config2 = ProjectConfig {
+        project: ProjectEntry {
+            name: "test-proj".to_string(),
+        },
+        terminals: vec![TerminalEntry {
+            name: "dev".to_string(),
+            path: ".".to_string(),
+            command: None,
+        }],
+        applications: vec![],
+    };
+    save_project_config(&config_path, &config2).unwrap();
+
+    let content = std::fs::read_to_string(&config_path).unwrap();
+
+    assert!(
+        content.starts_with("# QuickDev project configuration"),
+        "header should be preserved after re-save"
+    );
+    assert!(content.contains("[[terminals]]"));
+    assert!(content.contains("name = \"dev\""));
+    assert_eq!(
+        content.matches("# QuickDev project configuration").count(),
+        1,
+        "header should not be duplicated"
+    );
+}

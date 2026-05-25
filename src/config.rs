@@ -32,9 +32,29 @@ pub fn load_project_config(path: &Path) -> Result<ProjectConfig, String> {
     toml::from_str(&content).map_err(|e| format!("failed to parse project config: {e}"))
 }
 
+const TOML_COMMENT_HEADER: &str = "\
+# QuickDev project configuration
+# Edit this file directly or use: quickdev add, quickdev remove
+#
+# [project]
+#   name = Display name for this project
+#
+# [[terminals]]
+#   name    = Label for this terminal tab
+#   path    = Working directory relative to project root (e.g., \".\", \"./src\")
+#   command = (optional) Startup command to run when the terminal opens
+#
+# [[applications]]
+#   name = Application display name
+#   path = Executable path or .app bundle (e.g., \"/Applications/Cursor.app\")
+#   args = (optional) Arguments list (e.g., [\".\"] to open project root)
+";
+
 pub fn save_project_config(path: &Path, config: &ProjectConfig) -> Result<(), String> {
-    let content = toml::to_string_pretty(config)
+    let serialized = toml::to_string_pretty(config)
         .map_err(|e| format!("failed to serialize project config: {e}"))?;
+
+    let content = format!("{TOML_COMMENT_HEADER}\n{serialized}");
     fs::write(path, content).map_err(|e| format!("failed to write project config: {e}"))
 }
 
