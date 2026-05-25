@@ -20,12 +20,14 @@ name = "QuickDev"
 [[terminals]]
 name = "dev"
 path = "."
-command = "qd --help"
+command = "quickdev --help"
+emulator = "terminal"
 
 [[terminals]]
 name = "Global config"
 path = "/Users/orion-abrar/Documents/quickdev"
 command = "code ."
+emulator = "terminal"
 
 [[applications]]
 name = "Codex"
