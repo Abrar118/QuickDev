@@ -1,0 +1,14 @@
+applications = []
+
+[project]
+name = "QuickDev"
+
+[[terminals]]
+name = "dev"
+path = "."
+command = "cargo run -- --help"
+
+[[terminals]]
+name = "tests"
+path = "."
+command = "cargo test"
