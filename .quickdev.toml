@@ -14,8 +14,6 @@
 #   path = Executable path or .app bundle (e.g., "/Applications/Cursor.app")
 #   args = (optional) Arguments list (e.g., ["."] to open project root)
 
-applications = []
-
 [project]
 name = "QuickDev"
 
@@ -25,5 +23,10 @@ path = "."
 command = "qd --help"
 
 [[terminals]]
-name = "second"
-path = "."
+name = "Global config"
+path = "/Users/orion-abrar/Documents/quickdev"
+command = "code ."
+
+[[applications]]
+name = "Codex"
+path = "/Applications/Codex.app"
