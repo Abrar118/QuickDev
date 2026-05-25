@@ -39,7 +39,7 @@ choco install fzf
 ### Install QuickDev
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/quickdev.git
+git clone https://github.com/Abrar118/quickdev.git
 cd quickdev
 cargo install --path .
 ```
@@ -337,7 +337,7 @@ If fzf is not installed, the command errors with a hint to install fzf.
 ## Building from Source
 
 ```bash
-git clone https://github.com/YOUR_USERNAME/quickdev.git
+git clone https://github.com/Abrar118/quickdev.git
 cd quickdev
 cargo build --release
 ```
