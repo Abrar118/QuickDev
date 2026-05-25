@@ -44,10 +44,10 @@ enum Commands {
     },
     /// List all indexed projects
     List,
-    /// Add a terminal or application entry
+    /// Add a terminal or application entry (interactive if no subcommand given)
     Add {
         #[command(subcommand)]
-        kind: AddKind,
+        kind: Option<AddKind>,
     },
     /// Remove terminals/apps (interactive picker, or specify: remove terminal <name>)
     Remove {
@@ -201,6 +201,15 @@ fn cmd_launch(project: Option<String>) -> Result<(), String> {
     Ok(())
 }
 
+fn prompt(message: &str) -> Result<String, String> {
+    eprint!("{message}");
+    let mut input = String::new();
+    std::io::stdin()
+        .read_line(&mut input)
+        .map_err(|e| format!("failed to read input: {e}"))?;
+    Ok(input.trim().to_string())
+}
+
 fn print_launch_summary(results: &[LaunchResult]) {
     let success_count = results.iter().filter(|r| r.success).count();
     let total = results.len();
@@ -253,17 +262,17 @@ fn cmd_list() -> Result<(), String> {
     Ok(())
 }
 
-fn cmd_add(kind: AddKind) -> Result<(), String> {
+fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let (config_path, _root) = resolve_project_config(&cwd)?;
     let mut config = load_project_config(&config_path)?;
 
     match kind {
-        AddKind::Terminal {
+        Some(AddKind::Terminal {
             name,
             path,
             command,
-        } => {
+        }) => {
             if config.terminals.iter().any(|t| t.name == name) {
                 return Err(format!("terminal '{}' already exists", name));
             }
@@ -274,7 +283,7 @@ fn cmd_add(kind: AddKind) -> Result<(), String> {
             });
             println!("Added terminal '{}'", name);
         }
-        AddKind::App { name, path, args } => {
+        Some(AddKind::App { name, path, args }) => {
             if config.applications.iter().any(|a| a.name == name) {
                 return Err(format!("application '{}' already exists", name));
             }
@@ -285,9 +294,113 @@ fn cmd_add(kind: AddKind) -> Result<(), String> {
             });
             println!("Added application '{}'", name);
         }
+        None => {
+            return cmd_add_interactive(config_path, config);
+        }
     }
 
     save_project_config(&config_path, &config)
+}
+
+fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Result<(), String> {
+    let types = vec!["Terminal".to_string(), "Application".to_string()];
+    let selected = fzf::fzf_select_one(&types, "Select what to add:")?;
+
+    match selected.as_str() {
+        "Terminal" => {
+            let path = prompt("Path (. for current directory): ")?;
+            let path = if path.is_empty() { ".".to_string() } else { path };
+
+            let name = prompt("Name for this tab: ")?;
+            if name.is_empty() {
+                return Err("name cannot be empty".to_string());
+            }
+            if config.terminals.iter().any(|t| t.name == name) {
+                return Err(format!("terminal '{}' already exists", name));
+            }
+
+            let command_input = prompt("Startup command (optional, press Enter to skip): ")?;
+            let command = if command_input.is_empty() {
+                None
+            } else {
+                Some(command_input)
+            };
+
+            config.terminals.push(TerminalEntry {
+                name: name.clone(),
+                path,
+                command,
+            });
+            save_project_config(&config_path, &config)?;
+            println!("Added terminal '{name}'");
+        }
+        "Application" => {
+            let (app_name, app_path) = pick_application()?;
+
+            if config.applications.iter().any(|a| a.name == app_name) {
+                return Err(format!("application '{}' already exists", app_name));
+            }
+
+            config.applications.push(AppEntry {
+                name: app_name.clone(),
+                path: app_path,
+                args: None,
+            });
+            save_project_config(&config_path, &config)?;
+            println!("Added application '{app_name}'");
+        }
+        _ => return Err("invalid selection".to_string()),
+    }
+
+    Ok(())
+}
+
+fn pick_application() -> Result<(String, String), String> {
+    let discovered = apps::discover_apps();
+
+    if discovered.is_empty() {
+        let app_path = prompt("Application path: ")?;
+        if app_path.is_empty() {
+            return Err("path cannot be empty".to_string());
+        }
+        let app_name = prompt("Application name: ")?;
+        if app_name.is_empty() {
+            return Err("name cannot be empty".to_string());
+        }
+        return Ok((app_name, app_path));
+    }
+
+    let mut items: Vec<String> = vec!["[Enter path manually]".to_string()];
+    for (name, path) in &discovered {
+        items.push(format!("{name}  ({path})"));
+    }
+
+    let selected = fzf::fzf_select_one(&items, "Select an application:")?;
+
+    if selected == "[Enter path manually]" {
+        let app_path = prompt("Application path: ")?;
+        if app_path.is_empty() {
+            return Err("path cannot be empty".to_string());
+        }
+        let app_name = prompt("Application name: ")?;
+        if app_name.is_empty() {
+            return Err("name cannot be empty".to_string());
+        }
+        return Ok((app_name, app_path));
+    }
+
+    let app_name = selected
+        .split("  (")
+        .next()
+        .unwrap_or(&selected)
+        .to_string();
+
+    let entry = discovered
+        .iter()
+        .find(|(name, _)| *name == app_name)
+        .ok_or_else(|| format!("app '{}' not found in discovered list", app_name))?;
+
+    Ok((entry.0.clone(), entry.1.clone()))
 }
 
 fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
