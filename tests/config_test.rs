@@ -39,6 +39,7 @@ fn save_and_load_global_config() {
     let config_path = dir.path().join("config.toml");
 
     let config = GlobalConfig {
+        emulator: None,
         projects: vec![GlobalProjectEntry {
             name: "proj-a".to_string(),
             path: "/tmp/proj-a".to_string(),
@@ -92,6 +93,7 @@ fn find_project_config_returns_error_if_not_found() {
 #[test]
 fn unique_project_name_appends_suffix() {
     let config = GlobalConfig {
+        emulator: None,
         projects: vec![
             GlobalProjectEntry {
                 name: "my-app".to_string(),
@@ -195,4 +197,24 @@ fn resolve_project_config_finds_local() {
     let (config_path, project_root) = result.unwrap();
     assert_eq!(config_path, root.join(".quickdev.toml"));
     assert_eq!(project_root, root.to_path_buf());
+}
+
+#[test]
+fn save_global_config_adds_comment_header() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join("config.toml");
+
+    let config = GlobalConfig {
+        emulator: Some("ghostty".to_string()),
+        projects: vec![],
+    };
+
+    save_global_config(&config_path, &config).unwrap();
+    let content = std::fs::read_to_string(&config_path).unwrap();
+
+    assert!(
+        content.starts_with("# QuickDev global configuration"),
+        "should start with comment header"
+    );
+    assert!(content.contains("emulator = \"ghostty\""));
 }

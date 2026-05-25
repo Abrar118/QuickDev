@@ -44,6 +44,7 @@ fn project_config_round_trip() {
 #[test]
 fn global_config_round_trip() {
     let config = GlobalConfig {
+        emulator: None,
         projects: vec![
             GlobalProjectEntry {
                 name: "app-one".to_string(),

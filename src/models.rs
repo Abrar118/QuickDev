@@ -2,6 +2,7 @@ use serde::{Deserialize, Serialize};
 
 #[derive(Debug, Serialize, Deserialize)]
 pub struct GlobalConfig {
+    pub emulator: Option<String>,
     #[serde(default)]
     pub projects: Vec<GlobalProjectEntry>,
 }

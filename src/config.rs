@@ -10,20 +10,32 @@ pub fn global_config_path() -> PathBuf {
 
 pub fn load_global_config(path: &Path) -> Result<GlobalConfig, String> {
     if !path.exists() {
-        return Ok(GlobalConfig { projects: vec![] });
+        return Ok(GlobalConfig {
+            emulator: None,
+            projects: vec![],
+        });
     }
     let content =
         fs::read_to_string(path).map_err(|e| format!("failed to read global config: {e}"))?;
     toml::from_str(&content).map_err(|e| format!("failed to parse global config: {e}"))
 }
 
+const GLOBAL_COMMENT_HEADER: &str = "\
+# QuickDev global configuration
+#
+# emulator = (optional) Default terminal emulator: \"ghostty\", \"terminal\"
+#
+# Projects are auto-managed by quickdev init / deregister
+";
+
 pub fn save_global_config(path: &Path, config: &GlobalConfig) -> Result<(), String> {
     if let Some(parent) = path.parent() {
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create config directory: {e}"))?;
     }
-    let content = toml::to_string_pretty(config)
+    let serialized = toml::to_string_pretty(config)
         .map_err(|e| format!("failed to serialize global config: {e}"))?;
+    let content = format!("{GLOBAL_COMMENT_HEADER}\n{serialized}");
     fs::write(path, content).map_err(|e| format!("failed to write global config: {e}"))
 }
 
