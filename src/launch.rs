@@ -132,7 +132,9 @@ fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
     };
 
     Command::new(resolved)
-        .args(["-e", &user_shell, "-lc", &shell_command])
+        .args(["-e", &user_shell, "-lic", &shell_command])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("ghostty launch failed: {e}"))
@@ -165,6 +167,8 @@ fn run_in_platform_terminal(
         };
         Command::new("osascript")
             .args(["-e", &script])
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
             .spawn()
             .map(|_| ())
             .map_err(|e| format!("Terminal.app launch failed: {e}"))
@@ -239,7 +243,7 @@ fn run_in_platform_terminal(
             if tab_index > 0 {
                 cmd.arg("--tab");
             }
-            cmd.args(["--", &user_shell, "-lc", &shell_command]);
+            cmd.args(["--", &user_shell, "-lic", &shell_command]);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }
@@ -260,7 +264,7 @@ fn run_in_platform_terminal(
             for arg in *prefix_args {
                 cmd.arg(arg);
             }
-            cmd.args([&*user_shell, "-lc", &shell_command]);
+            cmd.args([&*user_shell, "-lic", &shell_command]);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }
@@ -295,6 +299,8 @@ fn launch_application(
                 }
 
                 return cmd
+                    .stdout(std::process::Stdio::null())
+                    .stderr(std::process::Stdio::null())
                     .spawn()
                     .map(|_| ())
                     .map_err(|e| format!("launch failed: {e}"));
@@ -320,6 +326,8 @@ fn launch_application_generic(executable: &str, args: Option<&[String]>) -> Resu
                 }
             }
             return cmd
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
                 .spawn()
                 .map(|_| ())
                 .map_err(|e| format!("launch failed: {e}"));
@@ -332,7 +340,9 @@ fn launch_application_generic(executable: &str, args: Option<&[String]>) -> Resu
             cmd.arg(arg);
         }
     }
-    cmd.spawn()
+    cmd.stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
         .map(|_| ())
         .map_err(|e| format!("launch failed: {e}"))
 }
