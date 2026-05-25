@@ -3,7 +3,7 @@ use quickdev::config::{
     save_project_config, unique_project_name,
 };
 use quickdev::models::{
-    AppEntry, GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
+    GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
 };
 use std::fs;
 
