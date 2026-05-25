@@ -30,6 +30,19 @@ fn infer_tool_id_returns_none_for_unknown() {
 }
 
 #[test]
+fn infer_tool_id_does_not_match_codex_as_vscode() {
+    assert_eq!(infer_tool_id("Codex", "/Applications/Codex.app"), None);
+}
+
+#[test]
+fn infer_tool_id_detects_vscode_by_path() {
+    assert_eq!(
+        infer_tool_id("Code", "/Applications/Visual Studio Code.app"),
+        Some("vscode".to_string())
+    );
+}
+
+#[test]
 fn is_editor_tool_recognizes_editors() {
     assert!(is_editor_tool("vscode"));
     assert!(is_editor_tool("cursor"));

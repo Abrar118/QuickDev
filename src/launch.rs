@@ -124,13 +124,15 @@ fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
 
     let resolved = resolve_command(ghostty_cmd).unwrap_or_else(|| ghostty_cmd.to_string());
 
+    let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+    let escaped_cwd = cwd.replace('\'', "'\\''");
     let shell_command = match command {
-        Some(cmd) => format!("cd '{}' && {}", cwd.replace('\'', "'\\''"), cmd),
-        None => format!("cd '{}' && exec $SHELL", cwd.replace('\'', "'\\''")),
+        Some(cmd) => format!("cd '{escaped_cwd}' && {cmd}; exec {user_shell}"),
+        None => format!("cd '{escaped_cwd}' && exec {user_shell}"),
     };
 
     Command::new(resolved)
-        .args(["-e", "sh", "-lc", &shell_command])
+        .args(["-e", &user_shell, "-lc", &shell_command])
         .spawn()
         .map(|_| ())
         .map_err(|e| format!("ghostty launch failed: {e}"))
@@ -222,10 +224,12 @@ fn run_in_platform_terminal(
 
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
     {
+        let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+        let escaped_cwd = cwd.replace('\'', "'\\''");
         let shell_command = if cmd_str.is_empty() {
-            format!("cd '{}' && exec $SHELL", cwd.replace('\'', "'\\''"))
+            format!("cd '{escaped_cwd}' && exec {user_shell}")
         } else {
-            format!("cd '{}' && {}", cwd.replace('\'', "'\\''"), cmd_str)
+            format!("cd '{escaped_cwd}' && {cmd_str}; exec {user_shell}")
         };
 
         if command_exists("gnome-terminal") {
@@ -235,7 +239,7 @@ fn run_in_platform_terminal(
             if tab_index > 0 {
                 cmd.arg("--tab");
             }
-            cmd.args(["--", "sh", "-lc", &shell_command]);
+            cmd.args(["--", &user_shell, "-lc", &shell_command]);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }
@@ -256,7 +260,7 @@ fn run_in_platform_terminal(
             for arg in *prefix_args {
                 cmd.arg(arg);
             }
-            cmd.args(["sh", "-lc", &shell_command]);
+            cmd.args([&*user_shell, "-lc", &shell_command]);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }

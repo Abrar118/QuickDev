@@ -32,20 +32,26 @@ pub fn launch_command_for_tool(_platform: &str, tool_id: &str) -> Option<&'stati
 }
 
 pub fn infer_tool_id(name: &str, path: &str) -> Option<String> {
-    let haystack = format!("{} {}", name.to_lowercase(), path.to_lowercase());
-    if haystack.contains("cursor") {
+    let name_lower = name.to_lowercase();
+    let path_lower = path.to_lowercase();
+
+    if name_lower.contains("cursor") || path_lower.contains("cursor") {
         return Some("cursor".to_string());
     }
-    if haystack.contains("code")
-        || haystack.contains("vscode")
-        || haystack.contains("visual studio")
+    if name_lower.contains("vscode")
+        || name_lower == "code"
+        || name_lower == "visual studio code"
+        || path_lower.contains("visual studio code")
+        || path_lower.ends_with("/code")
+        || path_lower.ends_with("code.app")
+        || path_lower.ends_with("code.exe")
     {
         return Some("vscode".to_string());
     }
-    if haystack.contains("zed") {
+    if name_lower.contains("zed") || path_lower.contains("zed") {
         return Some("zed".to_string());
     }
-    if haystack.contains("ghostty") {
+    if name_lower.contains("ghostty") || path_lower.contains("ghostty") {
         return Some("ghostty".to_string());
     }
     None
