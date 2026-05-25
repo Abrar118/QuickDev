@@ -15,9 +15,12 @@ pub struct LaunchResult {
 pub fn launch_project(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchResult> {
     let mut results = Vec::new();
 
-    for terminal in &config.terminals {
+    for (i, terminal) in config.terminals.iter().enumerate() {
+        if i > 0 {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        }
         let resolved_path = resolve_terminal_path(project_root, &terminal.path);
-        let result = launch_terminal(&resolved_path, terminal.command.as_deref());
+        let result = launch_terminal(&resolved_path, terminal.command.as_deref(), i);
         results.push(LaunchResult {
             label: terminal.name.clone(),
             kind: "terminal",
@@ -95,7 +98,7 @@ pub fn normalize_path(path: &str) -> String {
     path.to_string()
 }
 
-fn launch_terminal(resolved_path: &str, command: Option<&str>) -> Result<(), String> {
+fn launch_terminal(resolved_path: &str, command: Option<&str>, tab_index: usize) -> Result<(), String> {
     if !Path::new(resolved_path).exists() {
         return Err(format!("path not found: {resolved_path}"));
     }
@@ -104,7 +107,7 @@ fn launch_terminal(resolved_path: &str, command: Option<&str>) -> Result<(), Str
         return Ok(());
     }
 
-    run_in_platform_terminal(resolved_path, command)
+    run_in_platform_terminal(resolved_path, command, tab_index)
 }
 
 fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
@@ -129,7 +132,7 @@ fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
         .map_err(|e| format!("ghostty launch failed: {e}"))
 }
 
-fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), String> {
+fn run_in_platform_terminal(cwd: &str, command: Option<&str>, tab_index: usize) -> Result<(), String> {
     let cmd_str = command.unwrap_or("");
 
     #[cfg(target_os = "macos")]
@@ -140,10 +143,16 @@ fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), Stri
         } else {
             format!("{cd_part} && {cmd_str}")
         };
-        let script = format!(
-            "tell application \"Terminal\"\n    activate\n    do script \"{}\"\nend tell",
-            full.replace('"', "\\\"")
-        );
+        let escaped = full.replace('"', "\\\"");
+        let script = if tab_index == 0 {
+            format!(
+                "tell application \"Terminal\"\n    activate\n    do script \"{escaped}\"\nend tell"
+            )
+        } else {
+            format!(
+                "tell application \"Terminal\"\n    activate\n    do script \"{escaped}\" in front window\nend tell"
+            )
+        };
         Command::new("osascript")
             .args(["-e", &script])
             .spawn()
@@ -153,6 +162,31 @@ fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), Stri
 
     #[cfg(target_os = "windows")]
     {
+        if command_exists("wt") {
+            let wt_resolved = resolve_command("wt").unwrap_or_else(|| "wt".to_string());
+            if tab_index == 0 {
+                let mut cmd = Command::new(&wt_resolved);
+                cmd.args(["-d", cwd]);
+                if !cmd_str.is_empty() {
+                    cmd.args(["cmd", "/K", cmd_str]);
+                }
+                return cmd
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|e| format!("wt launch failed: {e}"));
+            } else {
+                let mut cmd = Command::new(&wt_resolved);
+                cmd.args(["-w", "0", "new-tab", "-d", cwd]);
+                if !cmd_str.is_empty() {
+                    cmd.args(["cmd", "/K", cmd_str]);
+                }
+                return cmd
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|e| format!("wt launch failed: {e}"));
+            }
+        }
+
         if command_exists("pwsh") {
             let ps_cmd = if cmd_str.is_empty() {
                 format!("Set-Location '{cwd}'")
@@ -166,28 +200,16 @@ fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), Stri
                 .map_err(|e| format!("pwsh launch failed: {e}"));
         }
 
-        if command_exists("wt") {
-            let mut cmd = Command::new(resolve_command("wt").unwrap_or_else(|| "wt".to_string()));
-            cmd.args(["-d", cwd]);
-            if !cmd_str.is_empty() {
-                cmd.args(["cmd", "/K", cmd_str]);
-            }
-            return cmd
-                .spawn()
-                .map(|_| ())
-                .map_err(|e| format!("wt launch failed: {e}"));
-        }
-
         let full = if cmd_str.is_empty() {
             format!("cd /d \"{cwd}\"")
         } else {
             format!("cd /d \"{cwd}\" && {cmd_str}")
         };
-        return Command::new("cmd")
+        Command::new("cmd")
             .args(["/C", "start", "cmd", "/K", &full])
             .spawn()
             .map(|_| ())
-            .map_err(|e| format!("cmd launch failed: {e}"));
+            .map_err(|e| format!("cmd launch failed: {e}"))
     }
 
     #[cfg(all(not(target_os = "macos"), not(target_os = "windows")))]
@@ -198,8 +220,20 @@ fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), Stri
             format!("cd '{}' && {}", cwd.replace('\'', "'\\''"), cmd_str)
         };
 
+        if command_exists("gnome-terminal") {
+            let resolved =
+                resolve_command("gnome-terminal").unwrap_or_else(|| "gnome-terminal".to_string());
+            let mut cmd = Command::new(resolved);
+            if tab_index > 0 {
+                cmd.arg("--tab");
+            }
+            cmd.args(["--", "sh", "-lc", &shell_command]);
+            if cmd.spawn().is_ok() {
+                return Ok(());
+            }
+        }
+
         let candidates: &[(&str, &[&str])] = &[
-            ("gnome-terminal", &["--"]),
             ("konsole", &["-e"]),
             ("alacritty", &["-e"]),
             ("xterm", &["-e"]),
