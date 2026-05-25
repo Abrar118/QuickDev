@@ -18,12 +18,45 @@ Every time you start working on a project, you open the same terminals, navigate
 
 ## Installation
 
-### Prerequisites
+### Option 1: Download Pre-built Binary (Recommended)
 
-- [Rust](https://rustup.rs/) (1.70+)
-- [fzf](https://github.com/junegunn/fzf) (optional, for interactive features)
+Download the latest binary for your platform from the [Releases page](https://github.com/Abrar118/QuickDev/releases).
 
-Install fzf:
+| Platform | File |
+|----------|------|
+| macOS (Apple Silicon) | `quickdev-macos-aarch64.tar.gz` |
+| macOS (Intel) | `quickdev-macos-x86_64.tar.gz` |
+| Linux (x86_64) | `quickdev-linux-x86_64.tar.gz` |
+| Linux (ARM64) | `quickdev-linux-aarch64.tar.gz` |
+| Windows (x86_64) | `quickdev-windows-x86_64.zip` |
+
+Then extract and move to your PATH:
+
+```bash
+# macOS / Linux
+tar xzf quickdev-*.tar.gz
+sudo mv quickdev /usr/local/bin/
+
+# Windows (PowerShell)
+Expand-Archive quickdev-windows-x86_64.zip -DestinationPath .
+Move-Item quickdev.exe C:\Windows\System32\
+```
+
+### Option 2: Build from Source
+
+Requires [Rust](https://rustup.rs/) 1.70+.
+
+```bash
+git clone https://github.com/Abrar118/QuickDev.git
+cd QuickDev
+cargo install --path .
+```
+
+This installs the `quickdev` binary to `~/.cargo/bin/`. Make sure `~/.cargo/bin` is in your `PATH` (it is by default with rustup).
+
+### Optional: Install fzf
+
+[fzf](https://github.com/junegunn/fzf) enables interactive features (selection pickers for launch, add, remove, and project switching). QuickDev works without it, but the interactive modes require it.
 
 ```bash
 # macOS
@@ -35,16 +68,6 @@ sudo apt install fzf
 # Windows
 choco install fzf
 ```
-
-### Install QuickDev
-
-```bash
-git clone https://github.com/Abrar118/quickdev.git
-cd quickdev
-cargo install --path .
-```
-
-This installs the `quickdev` binary to `~/.cargo/bin/`. Make sure `~/.cargo/bin` is in your `PATH` (it is by default with rustup).
 
 ### Verify installation
 
