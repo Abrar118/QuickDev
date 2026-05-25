@@ -17,7 +17,15 @@ use std::process;
 #[derive(Parser)]
 #[command(
     name = "quickdev",
-    about = "Manage and launch project terminal/app configurations"
+    about = "Manage and launch project terminal/app configurations",
+    after_help = "\
+Examples:
+  quickdev init                                         Initialize a project
+  quickdev launch                                       Launch current project
+  quickdev launch my-api                                Launch a project by name
+  quickdev add terminal server . --command \"npm start\"  Add a terminal tab
+  quickdev add app Cursor /Applications/Cursor.app      Add an application
+  quickdev remove                                       Interactive removal picker"
 )]
 struct Cli {
     #[command(subcommand)]
@@ -52,6 +60,11 @@ enum Commands {
 #[derive(Subcommand)]
 enum AddKind {
     /// Add a terminal entry
+    #[command(after_help = "\
+Examples:
+  quickdev add terminal server .                        Open shell in project root
+  quickdev add terminal dev . --command \"npm run dev\"   Run a command on open
+  quickdev add terminal logs ./logs                     Open shell in subdirectory")]
     Terminal {
         /// Name for this terminal tab
         name: String,
@@ -62,6 +75,10 @@ enum AddKind {
         command: Option<String>,
     },
     /// Add an application entry
+    #[command(after_help = "\
+Examples:
+  quickdev add app Cursor /Applications/Cursor.app --args \".\"
+  quickdev add app Firefox /usr/bin/firefox")]
     App {
         /// Application display name
         name: String,
