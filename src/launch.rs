@@ -132,7 +132,7 @@ fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
     };
 
     Command::new(resolved)
-        .args(["-e", &user_shell, "-lic", &shell_command])
+        .args(["-e", &user_shell, "-lc", &shell_command])
         .stdout(std::process::Stdio::null())
         .stderr(std::process::Stdio::null())
         .spawn()
@@ -243,7 +243,7 @@ fn run_in_platform_terminal(
             if tab_index > 0 {
                 cmd.arg("--tab");
             }
-            cmd.args(["--", &user_shell, "-lic", &shell_command]);
+            cmd.args(["--", &user_shell, "-lc", &shell_command]);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }
@@ -264,7 +264,7 @@ fn run_in_platform_terminal(
             for arg in *prefix_args {
                 cmd.arg(arg);
             }
-            cmd.args([&*user_shell, "-lic", &shell_command]);
+            cmd.args([&*user_shell, "-lc", &shell_command]);
             if cmd.spawn().is_ok() {
                 return Ok(());
             }
