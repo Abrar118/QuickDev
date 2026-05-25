@@ -1,3 +1,4 @@
+use crate::fzf;
 use crate::models::{GlobalConfig, ProjectConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -84,4 +85,60 @@ pub fn unique_project_name(base_name: &str, config: &GlobalConfig) -> String {
         }
         suffix += 1;
     }
+}
+
+pub fn resolve_project_config(start: &Path) -> Result<(PathBuf, PathBuf), String> {
+    match find_project_config(start) {
+        Ok(result) => Ok(result),
+        Err(_) => fzf_select_project(),
+    }
+}
+
+fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
+    let global_path = global_config_path();
+    let global = load_global_config(&global_path)?;
+
+    if global.projects.is_empty() {
+        return Err(
+            "No projects registered. Run 'quickdev init' in a project directory.".to_string(),
+        );
+    }
+
+    if !fzf::check_fzf() {
+        return Err(
+            "no .quickdev.toml found in current or parent directories.\nTip: install fzf for interactive project selection"
+                .to_string(),
+        );
+    }
+
+    let items: Vec<String> = global
+        .projects
+        .iter()
+        .map(|p| format!("{:<20} {}", p.name, p.path))
+        .collect();
+
+    let selected = fzf::fzf_select_one(&items, "Select a project:")?;
+
+    let project_name = selected
+        .split_whitespace()
+        .next()
+        .ok_or("invalid selection")?;
+
+    let entry = global
+        .projects
+        .iter()
+        .find(|p| p.name == project_name)
+        .ok_or_else(|| format!("project '{}' not found", project_name))?;
+
+    let root = PathBuf::from(&entry.path);
+    let config_path = root.join(".quickdev.toml");
+
+    if !config_path.exists() {
+        return Err(format!(
+            ".quickdev.toml not found at {}",
+            config_path.display()
+        ));
+    }
+
+    Ok((config_path, root))
 }

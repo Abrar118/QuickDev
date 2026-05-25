@@ -1,6 +1,6 @@
 use quickdev::config::{
-    find_project_config, load_global_config, load_project_config, save_global_config,
-    save_project_config, unique_project_name,
+    find_project_config, load_global_config, load_project_config, resolve_project_config,
+    save_global_config, save_project_config, unique_project_name,
 };
 use quickdev::models::{
     GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
@@ -172,4 +172,25 @@ fn save_project_config_preserves_existing_header() {
         1,
         "header should not be duplicated"
     );
+}
+
+#[test]
+fn resolve_project_config_finds_local() {
+    let dir = tempfile::tempdir().unwrap();
+    let root = dir.path();
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "local-proj".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+    save_project_config(&root.join(".quickdev.toml"), &config).unwrap();
+
+    let result = resolve_project_config(root);
+    assert!(result.is_ok());
+    let (config_path, project_root) = result.unwrap();
+    assert_eq!(config_path, root.join(".quickdev.toml"));
+    assert_eq!(project_root, root.to_path_buf());
 }
