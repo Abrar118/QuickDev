@@ -12,3 +12,7 @@ command = "cargo run -- --help"
 name = "tests"
 path = "."
 command = "cargo test"
+
+[[terminals]]
+name = "second"
+path = "."

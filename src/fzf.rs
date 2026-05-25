@@ -69,7 +69,12 @@ pub fn fzf_select_multi(items: &[String], header: &str) -> Result<Vec<String>, S
 
     let mut child = Command::new("fzf")
         .args([
-            "--multi", "--header", header, "--height", "~50%", "--reverse",
+            "--multi",
+            "--header",
+            header,
+            "--height",
+            "~50%",
+            "--reverse",
         ])
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())

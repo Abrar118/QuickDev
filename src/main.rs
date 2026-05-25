@@ -6,7 +6,7 @@ mod models;
 
 use clap::{Parser, Subcommand};
 use config::{
-    resolve_project_config, global_config_path, load_global_config, load_project_config,
+    global_config_path, load_global_config, load_project_config, resolve_project_config,
     save_global_config, save_project_config, unique_project_name,
 };
 use launch::LaunchResult;
@@ -319,10 +319,7 @@ fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
     save_project_config(&config_path, &config)
 }
 
-fn cmd_remove_interactive(
-    config_path: PathBuf,
-    mut config: ProjectConfig,
-) -> Result<(), String> {
+fn cmd_remove_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Result<(), String> {
     let mut items: Vec<String> = Vec::new();
 
     for t in &config.terminals {
@@ -341,8 +338,10 @@ fn cmd_remove_interactive(
         return Err("no terminals or applications configured".to_string());
     }
 
-    let selected =
-        fzf::fzf_select_multi(&items, "Select items to remove (TAB to toggle, ENTER to confirm):")?;
+    let selected = fzf::fzf_select_multi(
+        &items,
+        "Select items to remove (TAB to toggle, ENTER to confirm):",
+    )?;
 
     let mut removed_terminals = Vec::new();
     let mut removed_apps = Vec::new();
