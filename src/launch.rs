@@ -20,7 +20,12 @@ pub fn launch_project(config: &ProjectConfig, project_root: &Path) -> Vec<Launch
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
         let resolved_path = resolve_terminal_path(project_root, &terminal.path);
-        let result = launch_terminal(&resolved_path, terminal.command.as_deref(), i);
+        let result = launch_terminal(
+            &resolved_path,
+            terminal.command.as_deref(),
+            i,
+            terminal.emulator.as_deref(),
+        );
         results.push(LaunchResult {
             label: terminal.name.clone(),
             kind: "terminal",
@@ -102,9 +107,17 @@ fn launch_terminal(
     resolved_path: &str,
     command: Option<&str>,
     tab_index: usize,
+    emulator: Option<&str>,
 ) -> Result<(), String> {
     if !Path::new(resolved_path).exists() {
         return Err(format!("path not found: {resolved_path}"));
+    }
+
+    match emulator {
+        Some("ghostty") => return try_ghostty(resolved_path, command),
+        Some("terminal") => return run_in_platform_terminal(resolved_path, command, tab_index),
+        Some(other) => return Err(format!("unknown emulator: {other}")),
+        None => {}
     }
 
     if try_ghostty(resolved_path, command).is_ok() {

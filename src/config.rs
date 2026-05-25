@@ -43,7 +43,8 @@ const TOML_COMMENT_HEADER: &str = "\
 # [[terminals]]
 #   name    = Label for this terminal tab
 #   path    = Working directory relative to project root (e.g., \".\", \"./src\")
-#   command = (optional) Startup command to run when the terminal opens
+#   command  = (optional) Startup command to run when the terminal opens
+#   emulator = (optional) Terminal emulator: \"ghostty\", \"terminal\". Omit for auto-detect
 #
 # [[applications]]
 #   name = Application display name

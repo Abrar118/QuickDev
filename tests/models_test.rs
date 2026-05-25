@@ -13,11 +13,13 @@ fn project_config_round_trip() {
                 name: "server".to_string(),
                 path: ".".to_string(),
                 command: Some("npm run dev".to_string()),
+                emulator: None,
             },
             TerminalEntry {
                 name: "logs".to_string(),
                 path: "./logs".to_string(),
                 command: None,
+                emulator: None,
             },
         ],
         applications: vec![AppEntry {

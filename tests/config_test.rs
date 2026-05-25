@@ -20,6 +20,7 @@ fn save_and_load_project_config() {
             name: "dev".to_string(),
             path: ".".to_string(),
             command: Some("cargo run".to_string()),
+            emulator: None,
         }],
         applications: vec![],
     };
@@ -154,6 +155,7 @@ fn save_project_config_preserves_existing_header() {
             name: "dev".to_string(),
             path: ".".to_string(),
             command: None,
+            emulator: None,
         }],
         applications: vec![],
     };

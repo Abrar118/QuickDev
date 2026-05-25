@@ -74,6 +74,9 @@ Examples:
         /// Startup command to run in the terminal
         #[arg(long)]
         command: Option<String>,
+        /// Terminal emulator to use (ghostty, terminal). Omit for auto-detect.
+        #[arg(long)]
+        emulator: Option<String>,
     },
     /// Add an application entry
     #[command(after_help = "\
@@ -272,6 +275,7 @@ fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
             name,
             path,
             command,
+            emulator,
         }) => {
             if config.terminals.iter().any(|t| t.name == name) {
                 return Err(format!("terminal '{}' already exists", name));
@@ -280,6 +284,7 @@ fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
                 name: name.clone(),
                 path,
                 command,
+                emulator,
             });
             println!("Added terminal '{}'", name);
         }
@@ -330,10 +335,13 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
                 Some(command_input)
             };
 
+            let emulator = pick_emulator()?;
+
             config.terminals.push(TerminalEntry {
                 name: name.clone(),
                 path,
                 command,
+                emulator,
             });
             save_project_config(&config_path, &config)?;
             println!("Added terminal '{name}'");
@@ -357,6 +365,20 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
     }
 
     Ok(())
+}
+
+fn pick_emulator() -> Result<Option<String>, String> {
+    let options = vec![
+        "Auto-detect (default)".to_string(),
+        "ghostty".to_string(),
+        "terminal".to_string(),
+    ];
+    let selected = fzf::fzf_select_one(&options, "Select terminal emulator:")?;
+
+    match selected.as_str() {
+        "Auto-detect (default)" => Ok(None),
+        other => Ok(Some(other.to_string())),
+    }
 }
 
 fn pick_application() -> Result<(String, String), String> {
