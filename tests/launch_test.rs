@@ -1,4 +1,4 @@
-use quickdev::launch::{normalize_path, resolve_terminal_path, resolve_app_args};
+use quickdev::launch::{normalize_path, resolve_app_args, resolve_terminal_path};
 use std::path::Path;
 
 #[test]

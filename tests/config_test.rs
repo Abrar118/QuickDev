@@ -1,5 +1,10 @@
-use quickdev::config::{find_project_config, load_global_config, load_project_config, save_global_config, save_project_config, unique_project_name};
-use quickdev::models::{AppEntry, GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry};
+use quickdev::config::{
+    find_project_config, load_global_config, load_project_config, save_global_config,
+    save_project_config, unique_project_name,
+};
+use quickdev::models::{
+    AppEntry, GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
+};
 use std::fs;
 
 #[test]
@@ -8,7 +13,9 @@ fn save_and_load_project_config() {
     let config_path = dir.path().join(".quickdev.toml");
 
     let config = ProjectConfig {
-        project: ProjectEntry { name: "test-proj".to_string() },
+        project: ProjectEntry {
+            name: "test-proj".to_string(),
+        },
         terminals: vec![TerminalEntry {
             name: "dev".to_string(),
             path: ".".to_string(),
@@ -61,7 +68,9 @@ fn find_project_config_walks_parents() {
     fs::create_dir_all(&nested).unwrap();
 
     let config = ProjectConfig {
-        project: ProjectEntry { name: "root-proj".to_string() },
+        project: ProjectEntry {
+            name: "root-proj".to_string(),
+        },
         terminals: vec![],
         applications: vec![],
     };
@@ -83,8 +92,14 @@ fn find_project_config_returns_error_if_not_found() {
 fn unique_project_name_appends_suffix() {
     let config = GlobalConfig {
         projects: vec![
-            GlobalProjectEntry { name: "my-app".to_string(), path: "/a".to_string() },
-            GlobalProjectEntry { name: "my-app-2".to_string(), path: "/b".to_string() },
+            GlobalProjectEntry {
+                name: "my-app".to_string(),
+                path: "/a".to_string(),
+            },
+            GlobalProjectEntry {
+                name: "my-app-2".to_string(),
+                path: "/b".to_string(),
+            },
         ],
     };
 

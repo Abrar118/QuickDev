@@ -1,4 +1,6 @@
-use crate::adapters::{command_exists, infer_tool_id, is_editor_tool, launch_command_for_tool, resolve_command};
+use crate::adapters::{
+    command_exists, infer_tool_id, is_editor_tool, launch_command_for_tool, resolve_command,
+};
 use crate::models::ProjectConfig;
 use std::path::Path;
 use std::process::Command;
@@ -25,8 +27,10 @@ pub fn launch_project(config: &ProjectConfig, project_root: &Path) -> Vec<Launch
     }
 
     for app in &config.applications {
-        let resolved_args: Option<Vec<String>> = app.args.as_ref().map(|a| resolve_app_args(project_root, a));
-        let result = launch_application(&app.name, &app.path, resolved_args.as_deref(), project_root);
+        let resolved_args: Option<Vec<String>> =
+            app.args.as_ref().map(|a| resolve_app_args(project_root, a));
+        let result =
+            launch_application(&app.name, &app.path, resolved_args.as_deref(), project_root);
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
@@ -46,7 +50,9 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> String
         use std::path::Component;
         match component {
             Component::CurDir => {} // skip `.`
-            Component::ParentDir => { components.pop(); } // resolve `..`
+            Component::ParentDir => {
+                components.pop();
+            } // resolve `..`
             c => components.push(c.as_os_str().to_os_string()),
         }
     }
@@ -102,8 +108,8 @@ fn launch_terminal(resolved_path: &str, command: Option<&str>) -> Result<(), Str
 }
 
 fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
-    let ghostty_cmd = launch_command_for_tool(std::env::consts::OS, "ghostty")
-        .ok_or("ghostty not registered")?;
+    let ghostty_cmd =
+        launch_command_for_tool(std::env::consts::OS, "ghostty").ok_or("ghostty not registered")?;
 
     if !command_exists(ghostty_cmd) {
         return Err("ghostty not found".to_string());
@@ -138,11 +144,11 @@ fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), Stri
             "tell application \"Terminal\"\n    activate\n    do script \"{}\"\nend tell",
             full.replace('"', "\\\"")
         );
-        return Command::new("osascript")
+        Command::new("osascript")
             .args(["-e", &script])
             .spawn()
             .map(|_| ())
-            .map_err(|e| format!("Terminal.app launch failed: {e}"));
+            .map_err(|e| format!("Terminal.app launch failed: {e}"))
     }
 
     #[cfg(target_os = "windows")]
@@ -166,7 +172,10 @@ fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), Stri
             if !cmd_str.is_empty() {
                 cmd.args(["cmd", "/K", cmd_str]);
             }
-            return cmd.spawn().map(|_| ()).map_err(|e| format!("wt launch failed: {e}"));
+            return cmd
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("wt launch failed: {e}"));
         }
 
         let full = if cmd_str.is_empty() {
@@ -215,7 +224,12 @@ fn run_in_platform_terminal(cwd: &str, command: Option<&str>) -> Result<(), Stri
     }
 }
 
-fn launch_application(name: &str, path: &str, args: Option<&[String]>, project_root: &Path) -> Result<(), String> {
+fn launch_application(
+    name: &str,
+    path: &str,
+    args: Option<&[String]>,
+    project_root: &Path,
+) -> Result<(), String> {
     let normalized_path = normalize_path(path);
 
     let tool_id = infer_tool_id(name, &normalized_path);
@@ -234,7 +248,10 @@ fn launch_application(name: &str, path: &str, args: Option<&[String]>, project_r
                     }
                 }
 
-                return cmd.spawn().map(|_| ()).map_err(|e| format!("launch failed: {e}"));
+                return cmd
+                    .spawn()
+                    .map(|_| ())
+                    .map_err(|e| format!("launch failed: {e}"));
             }
         }
     }
@@ -256,7 +273,10 @@ fn launch_application_generic(executable: &str, args: Option<&[String]>) -> Resu
                     }
                 }
             }
-            return cmd.spawn().map(|_| ()).map_err(|e| format!("launch failed: {e}"));
+            return cmd
+                .spawn()
+                .map(|_| ())
+                .map_err(|e| format!("launch failed: {e}"));
         }
     }
 
@@ -266,5 +286,7 @@ fn launch_application_generic(executable: &str, args: Option<&[String]>) -> Resu
             cmd.arg(arg);
         }
     }
-    cmd.spawn().map(|_| ()).map_err(|e| format!("launch failed: {e}"))
+    cmd.spawn()
+        .map(|_| ())
+        .map_err(|e| format!("launch failed: {e}"))
 }

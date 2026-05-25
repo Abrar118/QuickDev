@@ -1,4 +1,6 @@
-use quickdev::models::{AppEntry, GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry};
+use quickdev::models::{
+    AppEntry, GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
+};
 
 #[test]
 fn project_config_round_trip() {

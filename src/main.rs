@@ -4,14 +4,20 @@ mod launch;
 mod models;
 
 use clap::{Parser, Subcommand};
-use config::{find_project_config, global_config_path, load_global_config, load_project_config, save_global_config, save_project_config, unique_project_name};
+use config::{
+    find_project_config, global_config_path, load_global_config, load_project_config,
+    save_global_config, save_project_config, unique_project_name,
+};
 use launch::LaunchResult;
 use models::{AppEntry, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry};
 use std::path::PathBuf;
 use std::process;
 
 #[derive(Parser)]
-#[command(name = "quickdev", about = "Manage and launch project terminal/app configurations")]
+#[command(
+    name = "quickdev",
+    about = "Manage and launch project terminal/app configurations"
+)]
 struct Cli {
     #[command(subcommand)]
     command: Commands,
@@ -97,7 +103,10 @@ fn cmd_init() -> Result<(), String> {
     let config_path = cwd.join(".quickdev.toml");
 
     if config_path.exists() {
-        return Err(format!(".quickdev.toml already exists in {}", cwd.display()));
+        return Err(format!(
+            ".quickdev.toml already exists in {}",
+            cwd.display()
+        ));
     }
 
     let dir_name = cwd
@@ -110,7 +119,9 @@ fn cmd_init() -> Result<(), String> {
     let project_name = unique_project_name(&dir_name, &global);
 
     let project_config = ProjectConfig {
-        project: ProjectEntry { name: project_name.clone() },
+        project: ProjectEntry {
+            name: project_name.clone(),
+        },
         terminals: vec![],
         applications: vec![],
     };
@@ -123,7 +134,11 @@ fn cmd_init() -> Result<(), String> {
     });
     save_global_config(&global_path, &global)?;
 
-    println!("Initialized project '{}' in {}", project_name, cwd.display());
+    println!(
+        "Initialized project '{}' in {}",
+        project_name,
+        cwd.display()
+    );
     println!("Global index updated at {}", global_path.display());
     Ok(())
 }
@@ -144,7 +159,8 @@ fn cmd_launch(project: Option<String>) -> Result<(), String> {
             (config, root)
         }
         None => {
-            let cwd = std::env::current_dir().map_err(|e| format!("cannot read current directory: {e}"))?;
+            let cwd = std::env::current_dir()
+                .map_err(|e| format!("cannot read current directory: {e}"))?;
             let (config_path, root) = find_project_config(&cwd)?;
             let config = load_project_config(&config_path)?;
             (config, root)
@@ -190,7 +206,10 @@ fn cmd_list() -> Result<(), String> {
         return Ok(());
     }
 
-    println!("{:<20} {:<50} {:>10} {:>6}", "Name", "Path", "Terminals", "Apps");
+    println!(
+        "{:<20} {:<50} {:>10} {:>6}",
+        "Name", "Path", "Terminals", "Apps"
+    );
     println!("{}", "-".repeat(90));
 
     for entry in &global.projects {
@@ -221,18 +240,30 @@ fn cmd_add(kind: AddKind) -> Result<(), String> {
     let mut config = load_project_config(&config_path)?;
 
     match kind {
-        AddKind::Terminal { name, path, command } => {
+        AddKind::Terminal {
+            name,
+            path,
+            command,
+        } => {
             if config.terminals.iter().any(|t| t.name == name) {
                 return Err(format!("terminal '{}' already exists", name));
             }
-            config.terminals.push(TerminalEntry { name: name.clone(), path, command });
+            config.terminals.push(TerminalEntry {
+                name: name.clone(),
+                path,
+                command,
+            });
             println!("Added terminal '{}'", name);
         }
         AddKind::App { name, path, args } => {
             if config.applications.iter().any(|a| a.name == name) {
                 return Err(format!("application '{}' already exists", name));
             }
-            config.applications.push(AppEntry { name: name.clone(), path, args });
+            config.applications.push(AppEntry {
+                name: name.clone(),
+                path,
+                args,
+            });
             println!("Added application '{}'", name);
         }
     }
