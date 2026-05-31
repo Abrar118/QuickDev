@@ -29,6 +29,7 @@ fn main() {
         Commands::Deregister { delete } => commands::cmd_deregister(delete),
         Commands::Config { action } => commands::cmd_config(action),
         Commands::Prune => commands::cmd_prune(),
+        Commands::Validate => commands::cmd_validate(),
     };
 
     if let Err(e) = result {

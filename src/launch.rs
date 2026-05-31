@@ -350,6 +350,9 @@ pub struct PlaceholderContext {
 /// Substitute `{root}`, `{config}`, `{name}`, `{cwd}` placeholders inside each
 /// app arg. A whole arg equal to "." is treated as `{root}` for backward
 /// compatibility. Unknown `{...}` tokens are left untouched.
+/// Placeholder token names recognized in application args (without braces).
+pub const KNOWN_PLACEHOLDERS: &[&str] = &["root", "config", "name", "cwd"];
+
 pub fn resolve_app_args(args: &[String], ctx: &PlaceholderContext) -> Vec<String> {
     args.iter()
         .map(|arg| {
