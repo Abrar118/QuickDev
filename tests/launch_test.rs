@@ -141,3 +141,36 @@ fn escape_applescript_leaves_plain_text() {
 fn escape_powershell_doubles_single_quotes() {
     assert_eq!(escape_powershell_single_quotes("Abrar's PC"), "Abrar''s PC");
 }
+
+#[test]
+fn render_results_formats_success_detail_and_failure() {
+    use quickdev::launch::{render_results, LaunchResult};
+    let results = vec![
+        LaunchResult {
+            label: "dev".to_string(),
+            kind: "terminal",
+            success: true,
+            error: None,
+            detail: Some("/home/user/p · npm run dev".to_string()),
+        },
+        LaunchResult {
+            label: "Cursor".to_string(),
+            kind: "app",
+            success: true,
+            error: None,
+            detail: Some("/Applications/Cursor.app".to_string()),
+        },
+        LaunchResult {
+            label: "logs".to_string(),
+            kind: "terminal",
+            success: false,
+            error: Some("bad path".to_string()),
+            detail: None,
+        },
+    ];
+    let out = render_results("Launched 2/3 items:", &results);
+    assert_eq!(
+        out,
+        "Launched 2/3 items:\n  ✓ terminal dev — /home/user/p · npm run dev\n  ✓ app Cursor — /Applications/Cursor.app\n  ✗ terminal logs — bad path\n"
+    );
+}

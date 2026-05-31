@@ -24,6 +24,26 @@ pub struct LaunchResult {
     pub detail: Option<String>,
 }
 
+/// Render a launch/plan summary: a header line followed by one ✓/✗ line per
+/// item. Success lines append ` — {detail}` when a detail is present; failure
+/// lines append ` — {error}`. Returns the full block (trailing newline included).
+#[allow(dead_code)]
+pub fn render_results(header: &str, results: &[LaunchResult]) -> String {
+    let mut out = format!("{header}\n");
+    for r in results {
+        if r.success {
+            match &r.detail {
+                Some(detail) => out.push_str(&format!("  ✓ {} {} — {}\n", r.kind, r.label, detail)),
+                None => out.push_str(&format!("  ✓ {} {}\n", r.kind, r.label)),
+            }
+        } else {
+            let err = r.error.as_deref().unwrap_or("unknown error");
+            out.push_str(&format!("  ✗ {} {} — {}\n", r.kind, r.label, err));
+        }
+    }
+    out
+}
+
 /// Long-running process name to watch as a readiness proxy for the emulator
 /// that terminal #0 will cold-start. Returns `None` when we can't determine it,
 /// in which case the caller treats the emulator as already warm (no extra wait).
