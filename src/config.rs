@@ -244,29 +244,43 @@ pub fn prune_projects(global: &mut GlobalConfig) -> Vec<String> {
     removed
 }
 
-/// Serialize project statuses to a pretty JSON array for `list --json`.
+/// Serialize project statuses to a JSON array string for `list --json`.
 pub fn projects_json(statuses: &[ProjectStatus]) -> String {
-    #[derive(serde::Serialize)]
-    struct ProjectJson<'a> {
-        name: &'a str,
-        path: &'a str,
-        healthy: bool,
-        path_exists: bool,
-        config_exists: bool,
+    fn esc(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c => out.push(c),
+            }
+        }
+        out
     }
 
-    let items: Vec<ProjectJson> = statuses
-        .iter()
-        .map(|s| ProjectJson {
-            name: &s.name,
-            path: &s.path,
-            healthy: s.is_healthy(),
-            path_exists: s.path_exists,
-            config_exists: s.config_exists,
-        })
-        .collect();
+    if statuses.is_empty() {
+        return "[]".to_string();
+    }
 
-    serde_json::to_string_pretty(&items).unwrap_or_else(|_| "[]".to_string())
+    let mut out = String::from("[");
+    for (i, s) in statuses.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(
+            "\n  {{\"name\": \"{}\", \"path\": \"{}\", \"healthy\": {}, \"path_exists\": {}, \"config_exists\": {}}}",
+            esc(&s.name),
+            esc(&s.path),
+            s.is_healthy(),
+            s.path_exists,
+            s.config_exists
+        ));
+    }
+    out.push_str("\n]");
+    out
 }
 
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {

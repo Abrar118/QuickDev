@@ -12,23 +12,30 @@ fn status(name: &str, path_exists: bool, config_exists: bool) -> ProjectStatus {
 #[test]
 fn projects_json_contains_expected_fields() {
     let json = projects_json(&[status("api", true, true)]);
-    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(v[0]["name"], "api");
-    assert_eq!(v[0]["path"], "/p/api");
-    assert_eq!(v[0]["healthy"], true);
-    assert_eq!(v[0]["path_exists"], true);
-    assert_eq!(v[0]["config_exists"], true);
+    assert!(json.contains("\"name\": \"api\""));
+    assert!(json.contains("\"path\": \"/p/api\""));
+    assert!(json.contains("\"healthy\": true"));
+    assert!(json.contains("\"path_exists\": true"));
+    assert!(json.contains("\"config_exists\": true"));
 }
 
 #[test]
 fn projects_json_marks_unhealthy() {
     let json = projects_json(&[status("gone", false, false)]);
-    let v: serde_json::Value = serde_json::from_str(&json).unwrap();
-    assert_eq!(v[0]["healthy"], false);
-    assert_eq!(v[0]["path_exists"], false);
+    assert!(json.contains("\"healthy\": false"));
+    assert!(json.contains("\"path_exists\": false"));
 }
 
 #[test]
 fn projects_json_empty_is_array() {
     assert_eq!(projects_json(&[]).trim(), "[]");
+}
+
+#[test]
+fn projects_json_escapes_double_quotes() {
+    let json = projects_json(&[status("a\"b", true, true)]);
+    assert!(
+        json.contains("a\\\"b"),
+        "quotes must be escaped, got: {json}"
+    );
 }

@@ -6,11 +6,7 @@ fn root() -> &'static Path {
     Path::new("/home/user/project")
 }
 
-fn config(
-    name: &str,
-    terminals: Vec<TerminalEntry>,
-    applications: Vec<AppEntry>,
-) -> ProjectConfig {
+fn config(name: &str, terminals: Vec<TerminalEntry>, applications: Vec<AppEntry>) -> ProjectConfig {
     ProjectConfig {
         project: ProjectEntry {
             name: name.to_string(),

@@ -3,10 +3,12 @@ mod apps;
 mod cli;
 mod commands;
 mod config;
+mod doctor;
 mod fzf;
 mod launch;
 mod models;
 mod parse;
+mod validate;
 
 use clap::Parser;
 use cli::{Cli, Commands};

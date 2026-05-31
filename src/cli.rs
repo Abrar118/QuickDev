@@ -43,7 +43,14 @@ pub(crate) enum Commands {
         dry_run: bool,
     },
     /// List all indexed projects
-    List,
+    List {
+        /// Show only projects whose path or .quickdev.toml is missing
+        #[arg(long)]
+        missing: bool,
+        /// Output as a JSON array
+        #[arg(long)]
+        json: bool,
+    },
     /// Add a terminal or application entry (interactive if no subcommand given)
     Add {
         #[command(subcommand)]
@@ -70,6 +77,16 @@ pub(crate) enum Commands {
     Config {
         #[command(subcommand)]
         action: ConfigAction,
+    },
+    /// Remove registrations whose path or .quickdev.toml no longer exists
+    Prune,
+    /// Check the current project's .quickdev.toml for problems
+    Validate,
+    /// Diagnose global config and registered projects (--fix to repair)
+    Doctor {
+        /// Create missing config, prune dead registrations, normalize configs
+        #[arg(long)]
+        fix: bool,
     },
 }
 

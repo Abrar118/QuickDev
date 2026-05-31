@@ -1,9 +1,9 @@
 pub mod adapters;
 pub mod apps;
 pub mod config;
+pub mod doctor;
 pub mod fzf;
 pub mod launch;
 pub mod models;
-pub mod doctor;
 pub mod parse;
 pub mod validate;
