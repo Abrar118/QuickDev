@@ -107,6 +107,13 @@ pub fn resolve_project_config(start: &Path) -> Result<(PathBuf, PathBuf), String
     }
 }
 
+pub fn parse_project_selection(selected: &str) -> Result<usize, String> {
+    selected
+        .split_once(':')
+        .and_then(|(index, _)| index.trim().parse::<usize>().ok())
+        .ok_or_else(|| "invalid selection".to_string())
+}
+
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     let global_path = global_config_path();
     let global = load_global_config(&global_path)?;
@@ -127,21 +134,14 @@ fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     let items: Vec<String> = global
         .projects
         .iter()
-        .map(|p| format!("{:<20} {}", p.name, p.path))
+        .enumerate()
+        .map(|(i, p)| format!("{i}: {}    {}", p.name, p.path))
         .collect();
 
     let selected = fzf::fzf_select_one(&items, "Select a project:")?;
 
-    let project_name = selected
-        .split_whitespace()
-        .next()
-        .ok_or("invalid selection")?;
-
-    let entry = global
-        .projects
-        .iter()
-        .find(|p| p.name == project_name)
-        .ok_or_else(|| format!("project '{}' not found", project_name))?;
+    let index = parse_project_selection(&selected)?;
+    let entry = global.projects.get(index).ok_or("invalid selection")?;
 
     let root = PathBuf::from(&entry.path);
     let config_path = root.join(".quickdev.toml");

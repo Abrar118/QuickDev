@@ -1,6 +1,6 @@
 use quickdev::config::{
-    find_project_config, load_global_config, load_project_config, resolve_project_config,
-    save_global_config, save_project_config, unique_project_name,
+    find_project_config, load_global_config, load_project_config, parse_project_selection,
+    resolve_project_config, save_global_config, save_project_config, unique_project_name,
 };
 use quickdev::models::{
     GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
@@ -197,6 +197,58 @@ fn resolve_project_config_finds_local() {
     let (config_path, project_root) = result.unwrap();
     assert_eq!(config_path, root.join(".quickdev.toml"));
     assert_eq!(project_root, root.to_path_buf());
+}
+
+#[test]
+fn parse_project_selection_extracts_index() {
+    assert_eq!(parse_project_selection("3: my-proj    /tmp/x"), Ok(3));
+}
+
+#[test]
+fn parse_project_selection_handles_name_with_spaces() {
+    assert_eq!(
+        parse_project_selection("0: Client A Project    /tmp/client a"),
+        Ok(0)
+    );
+}
+
+#[test]
+fn parse_project_selection_rejects_garbage() {
+    assert!(parse_project_selection("not-an-index").is_err());
+}
+
+#[test]
+fn renamed_project_config_persists() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    let cfg = ProjectConfig {
+        project: ProjectEntry {
+            name: "api".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+    save_project_config(&config_path, &cfg).unwrap();
+
+    // Global already has "api" -> init must pick a unique name.
+    let global = GlobalConfig {
+        emulator: None,
+        projects: vec![GlobalProjectEntry {
+            name: "api".to_string(),
+            path: "/tmp/other".to_string(),
+        }],
+    };
+    let unique = unique_project_name("api", &global);
+    assert_eq!(unique, "api-2");
+
+    // The fix writes the unique name back to the local config.
+    let mut existing = load_project_config(&config_path).unwrap();
+    existing.project.name = unique.clone();
+    save_project_config(&config_path, &existing).unwrap();
+
+    let reloaded = load_project_config(&config_path).unwrap();
+    assert_eq!(reloaded.project.name, "api-2");
 }
 
 #[test]

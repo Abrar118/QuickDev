@@ -4,6 +4,7 @@ mod config;
 mod fzf;
 mod launch;
 mod models;
+mod parse;
 
 use clap::{Parser, Subcommand};
 use config::{
@@ -25,7 +26,7 @@ Examples:
   quickdev init --from my-api                           Clone config from another project
   quickdev launch                                       Select items to launch
   quickdev launch --all                                 Launch everything
-  quickdev launch my-api                                Launch a project by name
+  quickdev launch my-api                                Interactive picker for a named project
   quickdev add                                          Interactive add
   quickdev remove                                       Interactive removal picker
   quickdev list                                         Show all projects
@@ -48,7 +49,7 @@ enum Commands {
     },
     /// Launch terminals and applications for a project
     Launch {
-        /// Project name from the global index (omit to use current directory)
+        /// Project to launch from the global index (omit to use current directory); the picker still appears unless --all
         project: Option<String>,
         /// Launch all items without interactive selection
         #[arg(long)]
@@ -166,8 +167,12 @@ fn cmd_init(from: Option<String>) -> Result<(), String> {
     }
 
     if config_path.exists() && !already_indexed {
-        let existing = load_project_config(&config_path)?;
+        let mut existing = load_project_config(&config_path)?;
         let project_name = unique_project_name(&existing.project.name, &global);
+        if existing.project.name != project_name {
+            existing.project.name = project_name.clone();
+            save_project_config(&config_path, &existing)?;
+        }
         global.projects.push(GlobalProjectEntry {
             name: project_name.clone(),
             path: cwd_str,
@@ -261,7 +266,7 @@ fn cmd_launch(project: Option<String>, all: bool) -> Result<(), String> {
         return Err("no terminals or applications configured".to_string());
     }
 
-    let config = if !all && project.is_none() {
+    let config = if !all {
         let items = build_item_display_list(&config);
         if items.len() <= 1 {
             config
@@ -465,7 +470,7 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
             let args = if args_input.is_empty() {
                 None
             } else {
-                Some(args_input.split_whitespace().map(String::from).collect())
+                Some(parse::parse_shell_args(&args_input)?)
             };
 
             config.applications.push(AppEntry {
@@ -657,9 +662,15 @@ fn cmd_edit(global: bool) -> Result<(), String> {
         path
     };
 
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
 
-    std::process::Command::new(&editor)
+    let parts = parse::parse_shell_args(&editor)?;
+    let (program, leading) = parts.split_first().ok_or("editor command is empty")?;
+
+    std::process::Command::new(program)
+        .args(leading)
         .arg(&config_path)
         .status()
         .map_err(|e| format!("failed to open editor '{}': {}", editor, e))?;
