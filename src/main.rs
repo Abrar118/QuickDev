@@ -1,6 +1,7 @@
 mod adapters;
 mod apps;
 mod cli;
+mod commands;
 mod config;
 mod fzf;
 mod launch;
@@ -9,6 +10,7 @@ mod parse;
 
 use clap::Parser;
 use cli::{AddKind, Cli, Commands, RemoveKind};
+use commands::shared::{build_item_display_list, parse_selected_items, prompt};
 use config::{
     global_config_path, load_global_config, load_project_config, resolve_project_config,
     save_global_config, save_project_config, unique_project_name,
@@ -196,15 +198,6 @@ fn cmd_launch(project: Option<String>, all: bool) -> Result<(), String> {
     }
 
     Ok(())
-}
-
-fn prompt(message: &str) -> Result<String, String> {
-    eprint!("{message}");
-    let mut input = String::new();
-    std::io::stdin()
-        .read_line(&mut input)
-        .map_err(|e| format!("failed to read input: {e}"))?;
-    Ok(input.trim().to_string())
 }
 
 fn print_launch_summary(results: &[LaunchResult]) {
@@ -470,47 +463,6 @@ fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
     }
 
     save_project_config(&config_path, &config)
-}
-
-fn build_item_display_list(config: &ProjectConfig) -> Vec<String> {
-    let mut items = Vec::new();
-    for t in &config.terminals {
-        let cmd_part = t
-            .command
-            .as_ref()
-            .map(|c| format!(" ({c})"))
-            .unwrap_or_default();
-        items.push(format!("[terminal] {} — {}{}", t.name, t.path, cmd_part));
-    }
-    for a in &config.applications {
-        items.push(format!("[app] {} — {}", a.name, a.path));
-    }
-    items
-}
-
-fn parse_selected_items(selected: &[String]) -> (Vec<String>, Vec<String>) {
-    let mut terminal_names = Vec::new();
-    let mut app_names = Vec::new();
-
-    for line in selected {
-        if line.starts_with("[terminal] ") {
-            let name = line
-                .strip_prefix("[terminal] ")
-                .and_then(|s| s.split(" — ").next())
-                .unwrap_or("")
-                .to_string();
-            terminal_names.push(name);
-        } else if line.starts_with("[app] ") {
-            let name = line
-                .strip_prefix("[app] ")
-                .and_then(|s| s.split(" — ").next())
-                .unwrap_or("")
-                .to_string();
-            app_names.push(name);
-        }
-    }
-
-    (terminal_names, app_names)
 }
 
 fn cmd_remove_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Result<(), String> {
