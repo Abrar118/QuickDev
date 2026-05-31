@@ -2,7 +2,7 @@
 use quickdev::launch::pgrep_args_for_process;
 use quickdev::launch::{
     emulator_watch_process, escape_applescript_string, escape_powershell_single_quotes,
-    normalize_path, poll_until, resolve_app_args, resolve_terminal_path,
+    normalize_path, poll_until, resolve_app_args, resolve_terminal_path, PlaceholderContext,
 };
 use std::path::Path;
 
@@ -131,20 +131,61 @@ fn default_process_probe_uses_exact_name() {
     assert_eq!(pgrep_args_for_process("ghostty"), vec!["-x", "ghostty"]);
 }
 
-#[test]
-fn resolve_app_args_replaces_dot() {
-    let project_root = Path::new("/home/user/my-project");
-    let args = vec![".".to_string(), "--flag".to_string()];
-    let result = resolve_app_args(project_root, &args);
-    assert_eq!(result, vec!["/home/user/my-project", "--flag"]);
+fn sample_ctx() -> PlaceholderContext {
+    PlaceholderContext {
+        root: "/home/user/project".to_string(),
+        config: "/home/user/project/.quickdev.toml".to_string(),
+        name: "myproj".to_string(),
+        cwd: "/home/user/elsewhere".to_string(),
+    }
 }
 
 #[test]
-fn resolve_app_args_no_dot() {
-    let project_root = Path::new("/home/user/my-project");
-    let args = vec!["--verbose".to_string()];
-    let result = resolve_app_args(project_root, &args);
-    assert_eq!(result, vec!["--verbose"]);
+fn resolve_app_args_dot_aliases_root() {
+    let args = vec![".".to_string(), "--flag".to_string()];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec!["/home/user/project", "--flag"]
+    );
+}
+
+#[test]
+fn resolve_app_args_expands_root_substring() {
+    let args = vec!["{root}/README.md".to_string()];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec!["/home/user/project/README.md"]
+    );
+}
+
+#[test]
+fn resolve_app_args_expands_all_placeholders() {
+    let args = vec![
+        "{config}".to_string(),
+        "{name}".to_string(),
+        "{cwd}".to_string(),
+    ];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec![
+            "/home/user/project/.quickdev.toml",
+            "myproj",
+            "/home/user/elsewhere"
+        ]
+    );
+}
+
+#[test]
+fn resolve_app_args_leaves_plain_and_unknown_untouched() {
+    let args = vec![
+        "--verbose".to_string(),
+        "file.txt".to_string(),
+        "{unknown}".to_string(),
+    ];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec!["--verbose", "file.txt", "{unknown}"]
+    );
 }
 
 #[test]

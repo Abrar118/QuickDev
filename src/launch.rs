@@ -179,9 +179,22 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
             }),
         }
     }
+    let placeholder_ctx = PlaceholderContext {
+        root: project_root.to_string_lossy().to_string(),
+        config: project_root
+            .join(".quickdev.toml")
+            .to_string_lossy()
+            .to_string(),
+        name: config.project.name.clone(),
+        cwd: std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| project_root.to_string_lossy().to_string()),
+    };
     for app in &config.applications {
-        let resolved_args: Option<Vec<String>> =
-            app.args.as_ref().map(|a| resolve_app_args(project_root, a));
+        let resolved_args: Option<Vec<String>> = app
+            .args
+            .as_ref()
+            .map(|a| resolve_app_args(a, &placeholder_ctx));
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
@@ -256,9 +269,22 @@ pub fn launch_project(
         }
     }
 
+    let placeholder_ctx = PlaceholderContext {
+        root: project_root.to_string_lossy().to_string(),
+        config: project_root
+            .join(".quickdev.toml")
+            .to_string_lossy()
+            .to_string(),
+        name: config.project.name.clone(),
+        cwd: std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| project_root.to_string_lossy().to_string()),
+    };
     for app in &config.applications {
-        let resolved_args: Option<Vec<String>> =
-            app.args.as_ref().map(|a| resolve_app_args(project_root, a));
+        let resolved_args: Option<Vec<String>> = app
+            .args
+            .as_ref()
+            .map(|a| resolve_app_args(a, &placeholder_ctx));
         let result =
             launch_application(&app.name, &app.path, resolved_args.as_deref(), project_root);
         results.push(LaunchResult {
@@ -308,15 +334,27 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
     Ok(normalized.to_string_lossy().to_string())
 }
 
-pub fn resolve_app_args(project_root: &Path, args: &[String]) -> Vec<String> {
-    let root_str = project_root.to_string_lossy();
+/// Values available for `{...}` placeholder substitution in application args.
+pub struct PlaceholderContext {
+    pub root: String,
+    pub config: String,
+    pub name: String,
+    pub cwd: String,
+}
+
+/// Substitute `{root}`, `{config}`, `{name}`, `{cwd}` placeholders inside each
+/// app arg. A whole arg equal to "." is treated as `{root}` for backward
+/// compatibility. Unknown `{...}` tokens are left untouched.
+pub fn resolve_app_args(args: &[String], ctx: &PlaceholderContext) -> Vec<String> {
     args.iter()
         .map(|arg| {
             if arg == "." {
-                root_str.to_string()
-            } else {
-                arg.clone()
+                return ctx.root.clone();
             }
+            arg.replace("{root}", &ctx.root)
+                .replace("{config}", &ctx.config)
+                .replace("{name}", &ctx.name)
+                .replace("{cwd}", &ctx.cwd)
         })
         .collect()
 }
