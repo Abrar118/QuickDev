@@ -1,7 +1,11 @@
 pub(crate) mod add;
 pub(crate) mod init;
+pub(crate) mod launch;
+pub(crate) mod list;
 pub(crate) mod remove;
 pub(crate) mod shared;
 pub(crate) use add::cmd_add;
 pub(crate) use init::cmd_init;
+pub(crate) use launch::cmd_launch;
+pub(crate) use list::cmd_list;
 pub(crate) use remove::cmd_remove;
