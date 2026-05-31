@@ -1,6 +1,7 @@
 use quickdev::config::{
     find_project_config, load_global_config, load_project_config, parse_project_selection,
-    resolve_project_config, save_global_config, save_project_config, unique_project_name,
+    register_existing_project_config, resolve_project_config, save_global_config,
+    save_project_config, unique_project_name,
 };
 use quickdev::models::{
     GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
@@ -247,6 +248,45 @@ fn renamed_project_config_persists() {
     existing.project.name = unique.clone();
     save_project_config(&config_path, &existing).unwrap();
 
+    let reloaded = load_project_config(&config_path).unwrap();
+    assert_eq!(reloaded.project.name, "api-2");
+}
+
+#[test]
+fn register_existing_project_config_syncs_local_name_and_global_index() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    let cfg = ProjectConfig {
+        project: ProjectEntry {
+            name: "api".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+    save_project_config(&config_path, &cfg).unwrap();
+
+    let mut global = GlobalConfig {
+        emulator: None,
+        projects: vec![GlobalProjectEntry {
+            name: "api".to_string(),
+            path: "/tmp/other".to_string(),
+        }],
+    };
+
+    let registered_name = register_existing_project_config(
+        &config_path,
+        dir.path().to_string_lossy().to_string(),
+        &mut global,
+    )
+    .unwrap();
+
+    assert_eq!(registered_name, "api-2");
+    assert_eq!(global.projects.last().unwrap().name, "api-2");
+    assert_eq!(
+        global.projects.last().unwrap().path,
+        dir.path().to_string_lossy()
+    );
     let reloaded = load_project_config(&config_path).unwrap();
     assert_eq!(reloaded.project.name, "api-2");
 }

@@ -1,6 +1,6 @@
 use crate::config::{
-    global_config_path, load_global_config, load_project_config, save_global_config,
-    save_project_config, unique_project_name,
+    global_config_path, load_global_config, load_project_config, register_existing_project_config,
+    save_global_config, save_project_config, unique_project_name,
 };
 use crate::models::{GlobalProjectEntry, ProjectConfig, ProjectEntry};
 use std::path::PathBuf;
@@ -28,16 +28,7 @@ pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
     }
 
     if config_path.exists() && !already_indexed {
-        let mut existing = load_project_config(&config_path)?;
-        let project_name = unique_project_name(&existing.project.name, &global);
-        if existing.project.name != project_name {
-            existing.project.name = project_name.clone();
-            save_project_config(&config_path, &existing)?;
-        }
-        global.projects.push(GlobalProjectEntry {
-            name: project_name.clone(),
-            path: cwd_str,
-        });
+        let project_name = register_existing_project_config(&config_path, cwd_str, &mut global)?;
         save_global_config(&global_path, &global)?;
         println!("Re-registered project '{}' in global index", project_name);
         return Ok(());
