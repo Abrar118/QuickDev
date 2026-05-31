@@ -4,3 +4,4 @@ pub mod config;
 pub mod fzf;
 pub mod launch;
 pub mod models;
+pub mod parse;
