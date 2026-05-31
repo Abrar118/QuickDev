@@ -30,6 +30,7 @@ fn main() {
         Commands::Config { action } => commands::cmd_config(action),
         Commands::Prune => commands::cmd_prune(),
         Commands::Validate => commands::cmd_validate(),
+        Commands::Doctor { fix } => commands::cmd_doctor(fix),
     };
 
     if let Err(e) = result {

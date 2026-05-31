@@ -4,5 +4,6 @@ pub mod config;
 pub mod fzf;
 pub mod launch;
 pub mod models;
+pub mod doctor;
 pub mod parse;
 pub mod validate;
