@@ -39,3 +39,16 @@ fn projects_json_escapes_double_quotes() {
         "quotes must be escaped, got: {json}"
     );
 }
+
+#[test]
+fn projects_json_escapes_control_characters() {
+    let json = projects_json(&[status("bad\u{0008}name", true, true)]);
+    assert!(
+        json.contains("bad\\u0008name"),
+        "control characters must be escaped, got: {json:?}"
+    );
+    assert!(
+        !json.contains('\u{0008}'),
+        "raw control characters must not appear in JSON output: {json:?}"
+    );
+}

@@ -247,14 +247,16 @@ pub fn prune_projects(global: &mut GlobalConfig) -> Vec<String> {
 /// Serialize project statuses to a JSON array string for `list --json`.
 pub fn projects_json(statuses: &[ProjectStatus]) -> String {
     fn esc(s: &str) -> String {
+        use std::fmt::Write as _;
+
         let mut out = String::with_capacity(s.len());
         for c in s.chars() {
             match c {
                 '"' => out.push_str("\\\""),
                 '\\' => out.push_str("\\\\"),
-                '\n' => out.push_str("\\n"),
-                '\r' => out.push_str("\\r"),
-                '\t' => out.push_str("\\t"),
+                c if c < ' ' => {
+                    let _ = write!(out, "\\u{:04x}", c as u32);
+                }
                 c => out.push(c),
             }
         }
