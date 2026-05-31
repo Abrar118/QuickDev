@@ -149,6 +149,20 @@ fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
     }
 }
 
+fn make_placeholder_ctx(config: &ProjectConfig, project_root: &Path) -> PlaceholderContext {
+    PlaceholderContext {
+        root: project_root.to_string_lossy().to_string(),
+        config: project_root
+            .join(".quickdev.toml")
+            .to_string_lossy()
+            .to_string(),
+        name: config.project.name.clone(),
+        cwd: std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| project_root.to_string_lossy().to_string()),
+    }
+}
+
 fn app_detail(path: &str, args: Option<&[String]>) -> String {
     match args {
         Some(args) if !args.is_empty() => format!("{path} · args: {}", args.join(" ")),
@@ -179,17 +193,7 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
             }),
         }
     }
-    let placeholder_ctx = PlaceholderContext {
-        root: project_root.to_string_lossy().to_string(),
-        config: project_root
-            .join(".quickdev.toml")
-            .to_string_lossy()
-            .to_string(),
-        name: config.project.name.clone(),
-        cwd: std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| project_root.to_string_lossy().to_string()),
-    };
+    let placeholder_ctx = make_placeholder_ctx(config, project_root);
     for app in &config.applications {
         let resolved_args: Option<Vec<String>> = app
             .args
@@ -269,17 +273,7 @@ pub fn launch_project(
         }
     }
 
-    let placeholder_ctx = PlaceholderContext {
-        root: project_root.to_string_lossy().to_string(),
-        config: project_root
-            .join(".quickdev.toml")
-            .to_string_lossy()
-            .to_string(),
-        name: config.project.name.clone(),
-        cwd: std::env::current_dir()
-            .map(|p| p.to_string_lossy().to_string())
-            .unwrap_or_else(|_| project_root.to_string_lossy().to_string()),
-    };
+    let placeholder_ctx = make_placeholder_ctx(config, project_root);
     for app in &config.applications {
         let resolved_args: Option<Vec<String>> = app
             .args
@@ -335,6 +329,7 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
 }
 
 /// Values available for `{...}` placeholder substitution in application args.
+#[derive(Debug)]
 pub struct PlaceholderContext {
     pub root: String,
     pub config: String,
@@ -351,12 +346,42 @@ pub fn resolve_app_args(args: &[String], ctx: &PlaceholderContext) -> Vec<String
             if arg == "." {
                 return ctx.root.clone();
             }
-            arg.replace("{root}", &ctx.root)
-                .replace("{config}", &ctx.config)
-                .replace("{name}", &ctx.name)
-                .replace("{cwd}", &ctx.cwd)
+            substitute_placeholders(arg, ctx)
         })
         .collect()
+}
+
+/// Single-pass placeholder substitution: each `{token}` is replaced at most
+/// once and replacement values are never re-scanned (so a value containing a
+/// token, e.g. a project name of "{cwd}", is not double-expanded). Unknown
+/// `{...}` tokens and unmatched `{` are left untouched.
+fn substitute_placeholders(input: &str, ctx: &PlaceholderContext) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        if let Some(end) = after.find('}') {
+            let token = &after[..=end]; // includes braces
+            let replacement = match token {
+                "{root}" => Some(ctx.root.as_str()),
+                "{config}" => Some(ctx.config.as_str()),
+                "{name}" => Some(ctx.name.as_str()),
+                "{cwd}" => Some(ctx.cwd.as_str()),
+                _ => None,
+            };
+            match replacement {
+                Some(r) => out.push_str(r),
+                None => out.push_str(token),
+            }
+            rest = &after[end + 1..];
+        } else {
+            out.push_str(after);
+            rest = "";
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 pub fn normalize_path(path: &str) -> String {

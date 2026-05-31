@@ -310,6 +310,19 @@ fn plan_launch_includes_resolved_app_args_in_detail() {
 }
 
 #[test]
+fn resolve_app_args_does_not_double_expand_placeholder_values() {
+    let ctx = PlaceholderContext {
+        root: "/r".to_string(),
+        config: "/r/.quickdev.toml".to_string(),
+        name: "{cwd}".to_string(),
+        cwd: "/the/cwd".to_string(),
+    };
+    // {name} expands to the literal "{cwd}" and must NOT be re-expanded.
+    let args = vec!["{name}".to_string()];
+    assert_eq!(resolve_app_args(&args, &ctx), vec!["{cwd}"]);
+}
+
+#[test]
 fn plan_launch_flags_escaping_terminal_path() {
     use quickdev::launch::plan_launch;
     use quickdev::models::{ProjectConfig, ProjectEntry, TerminalEntry};
