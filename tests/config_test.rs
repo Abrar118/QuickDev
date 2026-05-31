@@ -310,3 +310,44 @@ fn save_global_config_adds_comment_header() {
     );
     assert!(content.contains("emulator = \"ghostty\""));
 }
+
+#[test]
+fn is_supported_emulator_accepts_known_only() {
+    use quickdev::config::is_supported_emulator;
+    assert!(is_supported_emulator("ghostty"));
+    assert!(is_supported_emulator("terminal"));
+    assert!(!is_supported_emulator("kitty"));
+}
+
+#[test]
+fn set_get_unset_global_emulator() {
+    use quickdev::config::{get_global_setting, set_global_setting, unset_global_setting};
+    let mut config = GlobalConfig {
+        emulator: None,
+        projects: vec![],
+    };
+    set_global_setting(&mut config, "emulator", "ghostty").unwrap();
+    assert_eq!(config.emulator.as_deref(), Some("ghostty"));
+    assert_eq!(
+        get_global_setting(&config, "emulator").unwrap(),
+        "emulator = ghostty"
+    );
+    unset_global_setting(&mut config, "emulator").unwrap();
+    assert!(config.emulator.is_none());
+    assert_eq!(
+        get_global_setting(&config, "emulator").unwrap(),
+        "emulator is not set (auto-detect)"
+    );
+}
+
+#[test]
+fn set_global_setting_rejects_bad_value_and_unknown_key() {
+    use quickdev::config::set_global_setting;
+    let mut config = GlobalConfig {
+        emulator: None,
+        projects: vec![],
+    };
+    assert!(set_global_setting(&mut config, "emulator", "kitty").is_err());
+    assert!(set_global_setting(&mut config, "theme", "dark").is_err());
+    assert!(config.emulator.is_none());
+}

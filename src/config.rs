@@ -132,6 +132,62 @@ pub fn parse_project_selection(selected: &str) -> Result<usize, String> {
         .ok_or_else(|| "invalid selection".to_string())
 }
 
+#[allow(dead_code)]
+pub const SUPPORTED_EMULATORS: &[&str] = &["ghostty", "terminal"];
+
+#[allow(dead_code)]
+pub fn is_supported_emulator(value: &str) -> bool {
+    SUPPORTED_EMULATORS.contains(&value)
+}
+
+#[allow(dead_code)]
+fn unknown_key_error(key: &str) -> String {
+    format!("unknown config key {key:?} (supported: emulator)")
+}
+
+#[allow(dead_code)]
+pub fn set_global_setting(
+    config: &mut GlobalConfig,
+    key: &str,
+    value: &str,
+) -> Result<String, String> {
+    match key {
+        "emulator" => {
+            if !is_supported_emulator(value) {
+                return Err(format!(
+                    "unsupported emulator {value:?} (supported: {})",
+                    SUPPORTED_EMULATORS.join(", ")
+                ));
+            }
+            config.emulator = Some(value.to_string());
+            Ok(format!("Set emulator = {value}"))
+        }
+        other => Err(unknown_key_error(other)),
+    }
+}
+
+#[allow(dead_code)]
+pub fn get_global_setting(config: &GlobalConfig, key: &str) -> Result<String, String> {
+    match key {
+        "emulator" => Ok(match &config.emulator {
+            Some(v) => format!("emulator = {v}"),
+            None => "emulator is not set (auto-detect)".to_string(),
+        }),
+        other => Err(unknown_key_error(other)),
+    }
+}
+
+#[allow(dead_code)]
+pub fn unset_global_setting(config: &mut GlobalConfig, key: &str) -> Result<String, String> {
+    match key {
+        "emulator" => {
+            config.emulator = None;
+            Ok("Unset emulator".to_string())
+        }
+        other => Err(unknown_key_error(other)),
+    }
+}
+
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     let global_path = global_config_path();
     let global = load_global_config(&global_path)?;
