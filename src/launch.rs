@@ -20,6 +20,26 @@ pub struct LaunchResult {
     pub kind: &'static str,
     pub success: bool,
     pub error: Option<String>,
+    pub detail: Option<String>,
+}
+
+/// Render a launch/plan summary: a header line followed by one ✓/✗ line per
+/// item. Success lines append ` — {detail}` when a detail is present; failure
+/// lines append ` — {error}`. Returns the full block (trailing newline included).
+pub fn render_results(header: &str, results: &[LaunchResult]) -> String {
+    let mut out = format!("{header}\n");
+    for r in results {
+        if r.success {
+            match &r.detail {
+                Some(detail) => out.push_str(&format!("  ✓ {} {} — {}\n", r.kind, r.label, detail)),
+                None => out.push_str(&format!("  ✓ {} {}\n", r.kind, r.label)),
+            }
+        } else {
+            let err = r.error.as_deref().unwrap_or("unknown error");
+            out.push_str(&format!("  ✗ {} {} — {}\n", r.kind, r.label, err));
+        }
+    }
+    out
 }
 
 /// Long-running process name to watch as a readiness proxy for the emulator
@@ -112,6 +132,50 @@ fn wait_for_emulator_ready(name: &str) {
     }
 }
 
+/// Human-readable description of a terminal: its resolved directory plus the
+/// startup command when one is set. Shared by launch_project and plan_launch.
+fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
+    match command {
+        Some(cmd) => format!("{resolved_path} · {cmd}"),
+        None => resolved_path.to_string(),
+    }
+}
+
+/// Resolve what `launch_project` would launch, without spawning anything.
+/// Terminals that fail path resolution (e.g. escaping the project root) are
+/// returned as failures; everything else is a success carrying its `detail`.
+pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchResult> {
+    let mut results = Vec::new();
+    for terminal in &config.terminals {
+        match resolve_terminal_path(project_root, &terminal.path) {
+            Ok(resolved_path) => results.push(LaunchResult {
+                label: terminal.name.clone(),
+                kind: "terminal",
+                success: true,
+                error: None,
+                detail: Some(terminal_detail(&resolved_path, terminal.command.as_deref())),
+            }),
+            Err(e) => results.push(LaunchResult {
+                label: terminal.name.clone(),
+                kind: "terminal",
+                success: false,
+                error: Some(e),
+                detail: None,
+            }),
+        }
+    }
+    for app in &config.applications {
+        results.push(LaunchResult {
+            label: app.name.clone(),
+            kind: "app",
+            success: true,
+            error: None,
+            detail: Some(app.path.clone()),
+        });
+    }
+    results
+}
+
 pub fn launch_project(
     config: &ProjectConfig,
     project_root: &Path,
@@ -148,6 +212,7 @@ pub fn launch_project(
                     kind: "terminal",
                     success: false,
                     error: Some(e),
+                    detail: None,
                 });
                 continue;
             }
@@ -164,6 +229,7 @@ pub fn launch_project(
             kind: "terminal",
             success: result.is_ok(),
             error: result.err(),
+            detail: Some(terminal_detail(&resolved_path, terminal.command.as_deref())),
         });
 
         if i == 0 && multiple && !emulator_was_running {
@@ -183,6 +249,7 @@ pub fn launch_project(
             kind: "app",
             success: result.is_ok(),
             error: result.err(),
+            detail: Some(app.path.clone()),
         });
     }
 
@@ -193,7 +260,9 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
     use std::path::Component;
 
     let rel = Path::new(relative_path);
-    if rel.is_absolute() || rel.components().any(|c| c == Component::ParentDir) {
+    // `has_root()` catches POSIX-style absolute paths (e.g. "/etc/passwd") even on
+    // Windows, where `is_absolute()` is false for them (it requires a drive prefix).
+    if rel.is_absolute() || rel.has_root() || rel.components().any(|c| c == Component::ParentDir) {
         return Err(format!(
             "terminal path {relative_path:?} must stay inside the project root"
         ));
