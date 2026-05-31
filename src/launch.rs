@@ -15,11 +15,13 @@ pub fn escape_powershell_single_quotes(s: &str) -> String {
     s.replace('\'', "''")
 }
 
+#[allow(dead_code)]
 pub struct LaunchResult {
     pub label: String,
     pub kind: &'static str,
     pub success: bool,
     pub error: Option<String>,
+    pub detail: Option<String>,
 }
 
 /// Long-running process name to watch as a readiness proxy for the emulator
@@ -112,6 +114,15 @@ fn wait_for_emulator_ready(name: &str) {
     }
 }
 
+/// Human-readable description of a terminal: its resolved directory plus the
+/// startup command when one is set. Shared by launch_project and plan_launch.
+fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
+    match command {
+        Some(cmd) => format!("{resolved_path} · {cmd}"),
+        None => resolved_path.to_string(),
+    }
+}
+
 pub fn launch_project(
     config: &ProjectConfig,
     project_root: &Path,
@@ -148,6 +159,7 @@ pub fn launch_project(
                     kind: "terminal",
                     success: false,
                     error: Some(e),
+                    detail: None,
                 });
                 continue;
             }
@@ -164,6 +176,7 @@ pub fn launch_project(
             kind: "terminal",
             success: result.is_ok(),
             error: result.err(),
+            detail: Some(terminal_detail(&resolved_path, terminal.command.as_deref())),
         });
 
         if i == 0 && multiple && !emulator_was_running {
@@ -183,6 +196,7 @@ pub fn launch_project(
             kind: "app",
             success: result.is_ok(),
             error: result.err(),
+            detail: Some(app.path.clone()),
         });
     }
 
