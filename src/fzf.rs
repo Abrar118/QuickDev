@@ -2,6 +2,14 @@ use crate::adapters::command_exists;
 use std::io::Write;
 use std::process::{Command, Stdio};
 
+/// Sentinel error returned when the user cancels an fzf picker (ESC / ctrl-c or
+/// an empty selection). `main()` maps this to a clean "Cancelled." + exit 0.
+pub const CANCELLED: &str = "__quickdev_fzf_cancelled__";
+
+pub fn is_cancellation(err: &str) -> bool {
+    err == CANCELLED
+}
+
 pub fn check_fzf() -> bool {
     command_exists("fzf")
 }
@@ -46,12 +54,12 @@ pub fn fzf_select_one(items: &[String], header: &str) -> Result<String, String> 
         .map_err(|e| format!("fzf failed: {e}"))?;
 
     if !output.status.success() {
-        return Err("selection cancelled".to_string());
+        return Err(CANCELLED.to_string());
     }
 
     let selected = String::from_utf8_lossy(&output.stdout).trim().to_string();
     if selected.is_empty() {
-        return Err("no selection made".to_string());
+        return Err(CANCELLED.to_string());
     }
 
     Ok(selected)
@@ -93,7 +101,7 @@ pub fn fzf_select_multi(items: &[String], header: &str) -> Result<Vec<String>, S
         .map_err(|e| format!("fzf failed: {e}"))?;
 
     if !output.status.success() {
-        return Err("selection cancelled".to_string());
+        return Err(CANCELLED.to_string());
     }
 
     let selected: Vec<String> = String::from_utf8_lossy(&output.stdout)
@@ -103,7 +111,7 @@ pub fn fzf_select_multi(items: &[String], header: &str) -> Result<Vec<String>, S
         .collect();
 
     if selected.is_empty() {
-        return Err("no selection made".to_string());
+        return Err(CANCELLED.to_string());
     }
 
     Ok(selected)

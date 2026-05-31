@@ -31,6 +31,10 @@ fn main() {
     };
 
     if let Err(e) = result {
+        if fzf::is_cancellation(&e) {
+            println!("Cancelled.");
+            process::exit(0);
+        }
         eprintln!("error: {e}");
         process::exit(1);
     }
