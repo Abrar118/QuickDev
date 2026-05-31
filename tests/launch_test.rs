@@ -1,8 +1,9 @@
 #[cfg(not(target_os = "windows"))]
 use quickdev::launch::pgrep_args_for_process;
 use quickdev::launch::{
-    emulator_watch_process, escape_applescript_string, escape_powershell_single_quotes,
-    normalize_path, poll_until, resolve_app_args, resolve_terminal_path, PlaceholderContext,
+    editor_args, emulator_watch_process, escape_applescript_string,
+    escape_powershell_single_quotes, normalize_path, poll_until, resolve_app_args,
+    resolve_terminal_path, PlaceholderContext,
 };
 use std::path::Path;
 
@@ -342,4 +343,23 @@ fn plan_launch_flags_escaping_terminal_path() {
     assert_eq!(plan.len(), 1);
     assert!(!plan[0].success);
     assert!(plan[0].error.is_some());
+}
+
+#[test]
+fn editor_args_uses_configured_args_when_present() {
+    let resolved = vec![
+        "/home/user/project".to_string(),
+        "--reuse-window".to_string(),
+    ];
+    assert_eq!(editor_args(Some(&resolved), "/home/user/project"), resolved);
+}
+
+#[test]
+fn editor_args_defaults_to_root_when_none_or_empty() {
+    assert_eq!(editor_args(None, "/root"), vec!["/root".to_string()]);
+    let empty: Vec<String> = vec![];
+    assert_eq!(
+        editor_args(Some(&empty), "/root"),
+        vec!["/root".to_string()]
+    );
 }

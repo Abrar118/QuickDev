@@ -591,6 +591,15 @@ fn run_in_platform_terminal(
     }
 }
 
+/// Args to pass an editor tool (VS Code / Cursor / Zed): the configured args
+/// when present and non-empty, otherwise the project root.
+pub fn editor_args(args: Option<&[String]>, project_root: &str) -> Vec<String> {
+    match args {
+        Some(a) if !a.is_empty() => a.to_vec(),
+        _ => vec![project_root.to_string()],
+    }
+}
+
 fn launch_application(
     name: &str,
     path: &str,
@@ -608,7 +617,9 @@ fn launch_application(
                 let mut cmd = Command::new(&resolved);
 
                 if is_editor_tool(tid) {
-                    cmd.arg(project_root.to_string_lossy().as_ref());
+                    for arg in editor_args(args, project_root.to_string_lossy().as_ref()) {
+                        cmd.arg(arg);
+                    }
                 } else if let Some(a) = args {
                     for arg in a {
                         cmd.arg(arg);
