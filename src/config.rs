@@ -244,6 +244,31 @@ pub fn prune_projects(global: &mut GlobalConfig) -> Vec<String> {
     removed
 }
 
+/// Serialize project statuses to a pretty JSON array for `list --json`.
+pub fn projects_json(statuses: &[ProjectStatus]) -> String {
+    #[derive(serde::Serialize)]
+    struct ProjectJson<'a> {
+        name: &'a str,
+        path: &'a str,
+        healthy: bool,
+        path_exists: bool,
+        config_exists: bool,
+    }
+
+    let items: Vec<ProjectJson> = statuses
+        .iter()
+        .map(|s| ProjectJson {
+            name: &s.name,
+            path: &s.path,
+            healthy: s.is_healthy(),
+            path_exists: s.path_exists,
+            config_exists: s.config_exists,
+        })
+        .collect();
+
+    serde_json::to_string_pretty(&items).unwrap_or_else(|_| "[]".to_string())
+}
+
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     let global_path = global_config_path();
     let global = load_global_config(&global_path)?;

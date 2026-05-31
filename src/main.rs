@@ -22,7 +22,7 @@ fn main() {
             all,
             dry_run,
         } => commands::cmd_launch(project, all, dry_run),
-        Commands::List => commands::cmd_list(),
+        Commands::List { missing, json } => commands::cmd_list(missing, json),
         Commands::Add { kind } => commands::cmd_add(kind),
         Commands::Remove { kind } => commands::cmd_remove(kind),
         Commands::Edit { global } => commands::cmd_edit(global),
