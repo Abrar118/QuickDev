@@ -260,7 +260,9 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
     use std::path::Component;
 
     let rel = Path::new(relative_path);
-    if rel.is_absolute() || rel.components().any(|c| c == Component::ParentDir) {
+    // `has_root()` catches POSIX-style absolute paths (e.g. "/etc/passwd") even on
+    // Windows, where `is_absolute()` is false for them (it requires a drive prefix).
+    if rel.is_absolute() || rel.has_root() || rel.components().any(|c| c == Component::ParentDir) {
         return Err(format!(
             "terminal path {relative_path:?} must stay inside the project root"
         ));

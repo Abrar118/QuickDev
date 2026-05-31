@@ -32,7 +32,7 @@ pub fn discover_apps() -> Vec<(String, String)> {
             }
         }
 
-        apps.sort_by(|a, b| a.0.to_lowercase().cmp(&b.0.to_lowercase()));
+        apps.sort_by_key(|a| a.0.to_lowercase());
         apps.dedup_by(|a, b| a.0 == b.0);
         apps
     }

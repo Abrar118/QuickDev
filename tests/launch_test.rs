@@ -68,14 +68,18 @@ fn poll_until_returns_false_when_never_met() {
 fn resolve_terminal_path_joins_relative() {
     let project_root = Path::new("/home/user/my-project");
     let result = resolve_terminal_path(project_root, ".").unwrap();
-    assert_eq!(result, "/home/user/my-project");
+    // Normalize separators: the function emits `\` on Windows, `/` elsewhere.
+    assert_eq!(result.replace('\\', "/"), "/home/user/my-project");
 }
 
 #[test]
 fn resolve_terminal_path_joins_subdir() {
     let project_root = Path::new("/home/user/my-project");
     let result = resolve_terminal_path(project_root, "./src/server").unwrap();
-    assert_eq!(result, "/home/user/my-project/src/server");
+    assert_eq!(
+        result.replace('\\', "/"),
+        "/home/user/my-project/src/server"
+    );
 }
 
 #[test]
@@ -198,9 +202,10 @@ fn plan_launch_marks_valid_items_success() {
     let plan = plan_launch(&config, Path::new("/home/user/project"));
     assert_eq!(plan.len(), 2);
     assert!(plan[0].success);
+    // Normalize separators: the resolved terminal path uses `\` on Windows.
     assert_eq!(
-        plan[0].detail.as_deref(),
-        Some("/home/user/project/src · npm run dev")
+        plan[0].detail.as_deref().map(|d| d.replace('\\', "/")),
+        Some("/home/user/project/src · npm run dev".to_string())
     );
     assert!(plan[1].success);
     assert_eq!(plan[1].detail.as_deref(), Some("/Applications/Cursor.app"));
