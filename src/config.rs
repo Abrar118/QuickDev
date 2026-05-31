@@ -183,6 +183,106 @@ pub fn unset_global_setting(config: &mut GlobalConfig, key: &str) -> Result<Stri
     }
 }
 
+/// Health of a registered project: its directory and its `.quickdev.toml` must both exist.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectStatus {
+    pub name: String,
+    pub path: String,
+    pub path_exists: bool,
+    pub config_exists: bool,
+}
+
+impl ProjectStatus {
+    pub fn is_healthy(&self) -> bool {
+        self.path_exists && self.config_exists
+    }
+
+    pub fn issue(&self) -> Option<&'static str> {
+        if !self.path_exists {
+            Some("path missing")
+        } else if !self.config_exists {
+            Some(".quickdev.toml missing")
+        } else {
+            None
+        }
+    }
+}
+
+pub fn project_status(entry: &GlobalProjectEntry) -> ProjectStatus {
+    let path = Path::new(&entry.path);
+    let path_exists = path.exists();
+    let config_exists = path.join(".quickdev.toml").exists();
+    ProjectStatus {
+        name: entry.name.clone(),
+        path: entry.path.clone(),
+        path_exists,
+        config_exists,
+    }
+}
+
+pub fn project_statuses(global: &GlobalConfig) -> Vec<ProjectStatus> {
+    global.projects.iter().map(project_status).collect()
+}
+
+/// Subset of statuses that are not healthy (path or config missing).
+pub fn missing_statuses(statuses: &[ProjectStatus]) -> Vec<&ProjectStatus> {
+    statuses.iter().filter(|s| !s.is_healthy()).collect()
+}
+
+/// Removes registrations whose path or `.quickdev.toml` is missing.
+/// Returns the names of removed projects, in their original order.
+pub fn prune_projects(global: &mut GlobalConfig) -> Vec<String> {
+    let mut removed = Vec::new();
+    global.projects.retain(|entry| {
+        if project_status(entry).is_healthy() {
+            true
+        } else {
+            removed.push(entry.name.clone());
+            false
+        }
+    });
+    removed
+}
+
+/// Serialize project statuses to a JSON array string for `list --json`.
+pub fn projects_json(statuses: &[ProjectStatus]) -> String {
+    fn esc(s: &str) -> String {
+        let mut out = String::with_capacity(s.len());
+        for c in s.chars() {
+            match c {
+                '"' => out.push_str("\\\""),
+                '\\' => out.push_str("\\\\"),
+                '\n' => out.push_str("\\n"),
+                '\r' => out.push_str("\\r"),
+                '\t' => out.push_str("\\t"),
+                c => out.push(c),
+            }
+        }
+        out
+    }
+
+    if statuses.is_empty() {
+        return "[]".to_string();
+    }
+
+    let mut out = String::from("[");
+    for (i, s) in statuses.iter().enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        out.push_str(&format!(
+            "\n  {{\"name\": \"{}\", \"path\": \"{}\", \"healthy\": {}, \"path_exists\": {}, \"config_exists\": {}}}",
+            esc(&s.name),
+            esc(&s.path),
+            s.is_healthy(),
+            s.path_exists,
+            s.config_exists
+        ));
+    }
+    out.push_str("\n]");
+    out
+}
+
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     let global_path = global_config_path();
     let global = load_global_config(&global_path)?;

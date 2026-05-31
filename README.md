@@ -159,7 +159,14 @@ Projects:
     Apps: Cursor, Docker Desktop
 ```
 
-Projects whose directory no longer exists are marked `(missing)`.
+Projects whose directory no longer exists are marked `(path missing)`; a directory that exists but has lost its `.quickdev.toml` is marked `(.quickdev.toml missing)`.
+
+Flags:
+
+```bash
+quickdev list --missing    # Only projects whose path or .quickdev.toml is missing
+quickdev list --json       # Machine-readable JSON array (scriptable)
+```
 
 ### `quickdev add`
 
@@ -230,6 +237,38 @@ Remove the current project from the global index.
 ```bash
 quickdev deregister              # Remove from index, keep .quickdev.toml
 quickdev deregister --delete     # Remove from index AND delete .quickdev.toml
+```
+
+### `quickdev validate`
+
+Check the current project's `.quickdev.toml` for problems. Reports errors (terminal
+paths that escape the project root, unsupported emulators, an empty project name) and
+warnings (application paths that don't exist, unknown `{placeholder}` tokens). Exits
+non-zero if there are any errors.
+
+```bash
+quickdev validate
+```
+
+### `quickdev prune`
+
+Remove registrations from the global index whose project directory or `.quickdev.toml`
+no longer exists.
+
+```bash
+quickdev prune
+```
+
+### `quickdev doctor`
+
+Diagnose the global config and every registered project, printing a `✓`/`✗`/`⚠` summary.
+A missing `fzf` is reported as a warning; a bad global config or any unhealthy project is
+an error (non-zero exit).
+
+```bash
+quickdev doctor          # Report only
+quickdev doctor --fix    # Create missing global config, prune dead registrations,
+                         # and normalize project configs to canonical form
 ```
 
 ## Configuration

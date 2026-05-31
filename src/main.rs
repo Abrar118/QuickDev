@@ -3,10 +3,12 @@ mod apps;
 mod cli;
 mod commands;
 mod config;
+mod doctor;
 mod fzf;
 mod launch;
 mod models;
 mod parse;
+mod validate;
 
 use clap::Parser;
 use cli::{Cli, Commands};
@@ -22,12 +24,15 @@ fn main() {
             all,
             dry_run,
         } => commands::cmd_launch(project, all, dry_run),
-        Commands::List => commands::cmd_list(),
+        Commands::List { missing, json } => commands::cmd_list(missing, json),
         Commands::Add { kind } => commands::cmd_add(kind),
         Commands::Remove { kind } => commands::cmd_remove(kind),
         Commands::Edit { global } => commands::cmd_edit(global),
         Commands::Deregister { delete } => commands::cmd_deregister(delete),
         Commands::Config { action } => commands::cmd_config(action),
+        Commands::Prune => commands::cmd_prune(),
+        Commands::Validate => commands::cmd_validate(),
+        Commands::Doctor { fix } => commands::cmd_doctor(fix),
     };
 
     if let Err(e) = result {

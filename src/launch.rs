@@ -200,15 +200,8 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
             .args
             .as_ref()
             .map(|a| resolve_app_args(a, &placeholder_ctx));
-        // Mirror launch_application: editor tools open the project root when no
-        // args are configured, so the dry-run preview matches a real launch.
-        let effective_args: Option<Vec<String>> =
-            match infer_tool_id(&app.name, &normalize_path(&app.path)) {
-                Some(tid) if is_editor_tool(&tid) => {
-                    Some(editor_args(resolved_args.as_deref(), &root_str))
-                }
-                _ => resolved_args,
-            };
+        let effective_args =
+            effective_app_args(&app.name, &app.path, resolved_args.as_deref(), &root_str);
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
@@ -284,19 +277,21 @@ pub fn launch_project(
     }
 
     let placeholder_ctx = make_placeholder_ctx(config, project_root);
+    let root_str = project_root.to_string_lossy().to_string();
     for app in &config.applications {
         let resolved_args: Option<Vec<String>> = app
             .args
             .as_ref()
             .map(|a| resolve_app_args(a, &placeholder_ctx));
-        let result =
-            launch_application(&app.name, &app.path, resolved_args.as_deref(), project_root);
+        let effective_args =
+            effective_app_args(&app.name, &app.path, resolved_args.as_deref(), &root_str);
+        let result = launch_application(&app.name, &app.path, effective_args.as_deref());
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
             success: result.is_ok(),
             error: result.err(),
-            detail: Some(app_detail(&app.path, resolved_args.as_deref())),
+            detail: Some(app_detail(&app.path, effective_args.as_deref())),
         });
     }
 
@@ -350,6 +345,9 @@ pub struct PlaceholderContext {
 /// Substitute `{root}`, `{config}`, `{name}`, `{cwd}` placeholders inside each
 /// app arg. A whole arg equal to "." is treated as `{root}` for backward
 /// compatibility. Unknown `{...}` tokens are left untouched.
+/// Placeholder token names recognized in application args (without braces).
+pub const KNOWN_PLACEHOLDERS: &[&str] = &["root", "config", "name", "cwd"];
+
 pub fn resolve_app_args(args: &[String], ctx: &PlaceholderContext) -> Vec<String> {
     args.iter()
         .map(|arg| {
@@ -610,12 +608,19 @@ pub fn editor_args(args: Option<&[String]>, project_root: &str) -> Vec<String> {
     }
 }
 
-fn launch_application(
+pub fn effective_app_args(
     name: &str,
     path: &str,
     args: Option<&[String]>,
-    project_root: &Path,
-) -> Result<(), String> {
+    project_root: &str,
+) -> Option<Vec<String>> {
+    match infer_tool_id(name, &normalize_path(path)) {
+        Some(tid) if is_editor_tool(&tid) => Some(editor_args(args, project_root)),
+        _ => args.map(|a| a.to_vec()),
+    }
+}
+
+fn launch_application(name: &str, path: &str, args: Option<&[String]>) -> Result<(), String> {
     let normalized_path = normalize_path(path);
 
     let tool_id = infer_tool_id(name, &normalized_path);
@@ -626,11 +631,7 @@ fn launch_application(
                 let resolved = resolve_command(cli).unwrap_or_else(|| cli.to_string());
                 let mut cmd = Command::new(&resolved);
 
-                if is_editor_tool(tid) {
-                    for arg in editor_args(args, project_root.to_string_lossy().as_ref()) {
-                        cmd.arg(arg);
-                    }
-                } else if let Some(a) = args {
+                if let Some(a) = args {
                     for arg in a {
                         cmd.arg(arg);
                     }
