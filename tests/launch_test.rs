@@ -1,6 +1,8 @@
+#[cfg(not(target_os = "windows"))]
+use quickdev::launch::pgrep_args_for_process;
 use quickdev::launch::{
     emulator_watch_process, escape_applescript_string, escape_powershell_single_quotes,
-    normalize_path, pgrep_args_for_process, poll_until, resolve_app_args, resolve_terminal_path,
+    normalize_path, poll_until, resolve_app_args, resolve_terminal_path,
 };
 use std::path::Path;
 
@@ -114,6 +116,7 @@ fn resolve_terminal_path_rejects_embedded_parent() {
     assert!(resolve_terminal_path(project_root, "src/../../escape").is_err());
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
 fn gnome_terminal_process_probe_uses_full_command_line() {
     assert_eq!(
@@ -122,6 +125,7 @@ fn gnome_terminal_process_probe_uses_full_command_line() {
     );
 }
 
+#[cfg(not(target_os = "windows"))]
 #[test]
 fn default_process_probe_uses_exact_name() {
     assert_eq!(pgrep_args_for_process("ghostty"), vec!["-x", "ghostty"]);

@@ -89,6 +89,7 @@ pub fn poll_until(
     false
 }
 
+#[cfg(not(target_os = "windows"))]
 pub fn pgrep_args_for_process(name: &str) -> Vec<&str> {
     if name == "gnome-terminal-server" {
         vec!["-f", "gnome-terminal-server"]
