@@ -128,11 +128,12 @@ Launch terminals and applications for a project.
 
 ```bash
 quickdev launch                  # Interactive picker (select items with fzf)
+quickdev launch my-api           # Interactive picker for a project by name
 quickdev launch --all            # Launch everything without picker
-quickdev launch my-api           # Launch a project by name from anywhere
+quickdev launch my-api --all     # Launch everything for a named project
 ```
 
-When run without `--all`, an fzf multi-select picker appears. Use `TAB` to toggle items and `ENTER` to launch. If only one item is configured, it launches directly.
+When run without `--all`, an fzf multi-select picker appears — whether you launch the current project or name one explicitly. Use `TAB` to toggle items and `ENTER` to launch. If only one item is configured, it launches directly.
 
 ### `quickdev list`
 
@@ -355,7 +356,7 @@ If fzf is not installed, the command errors with a hint to install fzf.
 - **Config templates:** Set up one project's config, then use `quickdev init --from my-api` in new projects to get the same terminal/app layout.
 - **Edit directly:** The `.quickdev.toml` file is plain TOML. You can edit it by hand — `quickdev edit` opens it in your editor.
 - **Version control:** Commit `.quickdev.toml` to your repo so teammates can use the same launch config.
-- **Scripting:** All commands work non-interactively: `quickdev launch --all`, `quickdev add terminal dev .`, `quickdev remove terminal dev`. The interactive fzf mode only activates when no arguments are given.
+- **Scripting:** All commands work non-interactively when given explicit arguments (e.g. `quickdev launch --all`, `quickdev add terminal dev .`). The `launch` picker activates whenever `--all` is omitted; `add`/`remove` pickers activate when their item arguments are omitted.
 
 ## Building from Source
 

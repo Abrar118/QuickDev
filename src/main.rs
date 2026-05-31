@@ -26,7 +26,7 @@ Examples:
   quickdev init --from my-api                           Clone config from another project
   quickdev launch                                       Select items to launch
   quickdev launch --all                                 Launch everything
-  quickdev launch my-api                                Launch a project by name
+  quickdev launch my-api                                Interactive picker for a named project
   quickdev add                                          Interactive add
   quickdev remove                                       Interactive removal picker
   quickdev list                                         Show all projects
@@ -266,7 +266,7 @@ fn cmd_launch(project: Option<String>, all: bool) -> Result<(), String> {
         return Err("no terminals or applications configured".to_string());
     }
 
-    let config = if !all && project.is_none() {
+    let config = if !all {
         let items = build_item_display_list(&config);
         if items.len() <= 1 {
             config
