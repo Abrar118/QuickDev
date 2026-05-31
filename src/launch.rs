@@ -81,7 +81,9 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
 
     let rel = Path::new(relative_path);
     if rel.is_absolute() || rel.components().any(|c| c == Component::ParentDir) {
-        return Err("terminal path must stay inside the project root".to_string());
+        return Err(format!(
+            "terminal path {relative_path:?} must stay inside the project root"
+        ));
     }
 
     let joined = project_root.join(relative_path);
@@ -90,6 +92,8 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
     for component in joined.components() {
         match component {
             Component::CurDir => {} // skip `.`
+            // relative_path is already rejected if it contains `..`; this only
+            // applies to any `..` in project_root itself (canonical in practice).
             Component::ParentDir => {
                 components.pop();
             }
