@@ -5,6 +5,16 @@ use crate::models::ProjectConfig;
 use std::path::Path;
 use std::process::Command;
 
+#[allow(dead_code)]
+pub fn escape_applescript_string(s: &str) -> String {
+    s.replace('\\', "\\\\").replace('"', "\\\"")
+}
+
+#[allow(dead_code)]
+pub fn escape_powershell_single_quotes(s: &str) -> String {
+    s.replace('\'', "''")
+}
+
 pub struct LaunchResult {
     pub label: String,
     pub kind: &'static str,
@@ -173,7 +183,7 @@ fn run_in_platform_terminal(
         } else {
             format!("{cd_part} && {cmd_str}")
         };
-        let escaped = full.replace('"', "\\\"");
+        let escaped = escape_applescript_string(&full);
         let script = if tab_index == 0 {
             format!(
                 "tell application \"Terminal\"\n    activate\n    do script \"{escaped}\"\nend tell"
@@ -220,10 +230,11 @@ fn run_in_platform_terminal(
         }
 
         if command_exists("pwsh") {
+            let safe_cwd = escape_powershell_single_quotes(cwd);
             let ps_cmd = if cmd_str.is_empty() {
-                format!("Set-Location '{cwd}'")
+                format!("Set-Location '{safe_cwd}'")
             } else {
-                format!("Set-Location '{cwd}'; {cmd_str}")
+                format!("Set-Location '{safe_cwd}'; {cmd_str}")
             };
             return Command::new(resolve_command("pwsh").unwrap_or_else(|| "pwsh".to_string()))
                 .args(["-NoExit", "-Command", &ps_cmd])
