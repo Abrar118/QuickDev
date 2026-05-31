@@ -33,7 +33,18 @@ pub fn launch_project(
         if i > 0 {
             std::thread::sleep(std::time::Duration::from_millis(100));
         }
-        let resolved_path = resolve_terminal_path(project_root, &terminal.path);
+        let resolved_path = match resolve_terminal_path(project_root, &terminal.path) {
+            Ok(path) => path,
+            Err(e) => {
+                results.push(LaunchResult {
+                    label: terminal.name.clone(),
+                    kind: "terminal",
+                    success: false,
+                    error: Some(e),
+                });
+                continue;
+            }
+        };
         let effective_emulator = terminal.emulator.as_deref().or(global_emulator);
         let result = launch_terminal(
             &resolved_path,
@@ -65,22 +76,28 @@ pub fn launch_project(
     results
 }
 
-pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> String {
+pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result<String, String> {
+    use std::path::Component;
+
+    let rel = Path::new(relative_path);
+    if rel.is_absolute() || rel.components().any(|c| c == Component::ParentDir) {
+        return Err("terminal path must stay inside the project root".to_string());
+    }
+
     let joined = project_root.join(relative_path);
-    // Normalize away `.` and `..` components without hitting the filesystem
+    // Normalize away `.` components without hitting the filesystem.
     let mut components: Vec<std::ffi::OsString> = Vec::new();
     for component in joined.components() {
-        use std::path::Component;
         match component {
             Component::CurDir => {} // skip `.`
             Component::ParentDir => {
                 components.pop();
-            } // resolve `..`
+            }
             c => components.push(c.as_os_str().to_os_string()),
         }
     }
     let normalized: std::path::PathBuf = components.iter().collect();
-    normalized.to_string_lossy().to_string()
+    Ok(normalized.to_string_lossy().to_string())
 }
 
 pub fn resolve_app_args(project_root: &Path, args: &[String]) -> Vec<String> {

@@ -7,15 +7,33 @@ use std::path::Path;
 #[test]
 fn resolve_terminal_path_joins_relative() {
     let project_root = Path::new("/home/user/my-project");
-    let result = resolve_terminal_path(project_root, ".");
+    let result = resolve_terminal_path(project_root, ".").unwrap();
     assert_eq!(result, "/home/user/my-project");
 }
 
 #[test]
 fn resolve_terminal_path_joins_subdir() {
     let project_root = Path::new("/home/user/my-project");
-    let result = resolve_terminal_path(project_root, "./src/server");
+    let result = resolve_terminal_path(project_root, "./src/server").unwrap();
     assert_eq!(result, "/home/user/my-project/src/server");
+}
+
+#[test]
+fn resolve_terminal_path_rejects_parent_escape() {
+    let project_root = Path::new("/home/user/my-project");
+    assert!(resolve_terminal_path(project_root, "../../outside").is_err());
+}
+
+#[test]
+fn resolve_terminal_path_rejects_absolute() {
+    let project_root = Path::new("/home/user/my-project");
+    assert!(resolve_terminal_path(project_root, "/etc/passwd").is_err());
+}
+
+#[test]
+fn resolve_terminal_path_rejects_embedded_parent() {
+    let project_root = Path::new("/home/user/my-project");
+    assert!(resolve_terminal_path(project_root, "src/../../escape").is_err());
 }
 
 #[test]
