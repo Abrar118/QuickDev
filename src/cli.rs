@@ -66,6 +66,11 @@ pub(crate) enum Commands {
         #[arg(long)]
         delete: bool,
     },
+    /// Get or set global settings (currently: emulator)
+    Config {
+        #[command(subcommand)]
+        action: ConfigAction,
+    },
 }
 
 #[derive(Subcommand)]
@@ -110,4 +115,14 @@ pub(crate) enum RemoveKind {
     Terminal { name: String },
     /// Remove an application entry by name
     App { name: String },
+}
+
+#[derive(Subcommand)]
+pub(crate) enum ConfigAction {
+    /// Set a global setting, e.g. `config set emulator ghostty`
+    Set { key: String, value: String },
+    /// Print a global setting, e.g. `config get emulator`
+    Get { key: String },
+    /// Clear a global setting, e.g. `config unset emulator`
+    Unset { key: String },
 }

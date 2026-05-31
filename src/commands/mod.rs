@@ -1,4 +1,5 @@
 pub(crate) mod add;
+pub(crate) mod config;
 pub(crate) mod deregister;
 pub(crate) mod edit;
 pub(crate) mod init;
@@ -7,6 +8,7 @@ pub(crate) mod list;
 pub(crate) mod remove;
 pub(crate) mod shared;
 pub(crate) use add::cmd_add;
+pub(crate) use config::cmd_config;
 pub(crate) use deregister::cmd_deregister;
 pub(crate) use edit::cmd_edit;
 pub(crate) use init::cmd_init;

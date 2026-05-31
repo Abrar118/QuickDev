@@ -149,6 +149,20 @@ fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
     }
 }
 
+fn make_placeholder_ctx(config: &ProjectConfig, project_root: &Path) -> PlaceholderContext {
+    PlaceholderContext {
+        root: project_root.to_string_lossy().to_string(),
+        config: project_root
+            .join(".quickdev.toml")
+            .to_string_lossy()
+            .to_string(),
+        name: config.project.name.clone(),
+        cwd: std::env::current_dir()
+            .map(|p| p.to_string_lossy().to_string())
+            .unwrap_or_else(|_| project_root.to_string_lossy().to_string()),
+    }
+}
+
 fn app_detail(path: &str, args: Option<&[String]>) -> String {
     match args {
         Some(args) if !args.is_empty() => format!("{path} · args: {}", args.join(" ")),
@@ -179,15 +193,28 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
             }),
         }
     }
+    let placeholder_ctx = make_placeholder_ctx(config, project_root);
+    let root_str = project_root.to_string_lossy().to_string();
     for app in &config.applications {
-        let resolved_args: Option<Vec<String>> =
-            app.args.as_ref().map(|a| resolve_app_args(project_root, a));
+        let resolved_args: Option<Vec<String>> = app
+            .args
+            .as_ref()
+            .map(|a| resolve_app_args(a, &placeholder_ctx));
+        // Mirror launch_application: editor tools open the project root when no
+        // args are configured, so the dry-run preview matches a real launch.
+        let effective_args: Option<Vec<String>> =
+            match infer_tool_id(&app.name, &normalize_path(&app.path)) {
+                Some(tid) if is_editor_tool(&tid) => {
+                    Some(editor_args(resolved_args.as_deref(), &root_str))
+                }
+                _ => resolved_args,
+            };
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
             success: true,
             error: None,
-            detail: Some(app_detail(&app.path, resolved_args.as_deref())),
+            detail: Some(app_detail(&app.path, effective_args.as_deref())),
         });
     }
     results
@@ -256,9 +283,12 @@ pub fn launch_project(
         }
     }
 
+    let placeholder_ctx = make_placeholder_ctx(config, project_root);
     for app in &config.applications {
-        let resolved_args: Option<Vec<String>> =
-            app.args.as_ref().map(|a| resolve_app_args(project_root, a));
+        let resolved_args: Option<Vec<String>> = app
+            .args
+            .as_ref()
+            .map(|a| resolve_app_args(a, &placeholder_ctx));
         let result =
             launch_application(&app.name, &app.path, resolved_args.as_deref(), project_root);
         results.push(LaunchResult {
@@ -308,17 +338,60 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
     Ok(normalized.to_string_lossy().to_string())
 }
 
-pub fn resolve_app_args(project_root: &Path, args: &[String]) -> Vec<String> {
-    let root_str = project_root.to_string_lossy();
+/// Values available for `{...}` placeholder substitution in application args.
+#[derive(Debug)]
+pub struct PlaceholderContext {
+    pub root: String,
+    pub config: String,
+    pub name: String,
+    pub cwd: String,
+}
+
+/// Substitute `{root}`, `{config}`, `{name}`, `{cwd}` placeholders inside each
+/// app arg. A whole arg equal to "." is treated as `{root}` for backward
+/// compatibility. Unknown `{...}` tokens are left untouched.
+pub fn resolve_app_args(args: &[String], ctx: &PlaceholderContext) -> Vec<String> {
     args.iter()
         .map(|arg| {
             if arg == "." {
-                root_str.to_string()
-            } else {
-                arg.clone()
+                return ctx.root.clone();
             }
+            substitute_placeholders(arg, ctx)
         })
         .collect()
+}
+
+/// Single-pass placeholder substitution: each `{token}` is replaced at most
+/// once and replacement values are never re-scanned (so a value containing a
+/// token, e.g. a project name of "{cwd}", is not double-expanded). Unknown
+/// `{...}` tokens and unmatched `{` are left untouched.
+fn substitute_placeholders(input: &str, ctx: &PlaceholderContext) -> String {
+    let mut out = String::with_capacity(input.len());
+    let mut rest = input;
+    while let Some(start) = rest.find('{') {
+        out.push_str(&rest[..start]);
+        let after = &rest[start..];
+        if let Some(end) = after.find('}') {
+            let token = &after[..=end]; // includes braces
+            let replacement = match token {
+                "{root}" => Some(ctx.root.as_str()),
+                "{config}" => Some(ctx.config.as_str()),
+                "{name}" => Some(ctx.name.as_str()),
+                "{cwd}" => Some(ctx.cwd.as_str()),
+                _ => None,
+            };
+            match replacement {
+                Some(r) => out.push_str(r),
+                None => out.push_str(token),
+            }
+            rest = &after[end + 1..];
+        } else {
+            out.push_str(after);
+            rest = "";
+        }
+    }
+    out.push_str(rest);
+    out
 }
 
 pub fn normalize_path(path: &str) -> String {
@@ -528,6 +601,15 @@ fn run_in_platform_terminal(
     }
 }
 
+/// Args to pass an editor tool (VS Code / Cursor / Zed): the configured args
+/// when present and non-empty, otherwise the project root.
+pub fn editor_args(args: Option<&[String]>, project_root: &str) -> Vec<String> {
+    match args {
+        Some(a) if !a.is_empty() => a.to_vec(),
+        _ => vec![project_root.to_string()],
+    }
+}
+
 fn launch_application(
     name: &str,
     path: &str,
@@ -545,7 +627,9 @@ fn launch_application(
                 let mut cmd = Command::new(&resolved);
 
                 if is_editor_tool(tid) {
-                    cmd.arg(project_root.to_string_lossy().as_ref());
+                    for arg in editor_args(args, project_root.to_string_lossy().as_ref()) {
+                        cmd.arg(arg);
+                    }
                 } else if let Some(a) = args {
                     for arg in a {
                         cmd.arg(arg);

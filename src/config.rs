@@ -61,7 +61,8 @@ const TOML_COMMENT_HEADER: &str = "\
 # [[applications]]
 #   name = Application display name
 #   path = Executable path or .app bundle (e.g., \"/Applications/Cursor.app\")
-#   args = (optional) Arguments list (e.g., [\".\"] to open project root)
+#   args = (optional) Arguments list. Placeholders: {root} {config} {name} {cwd}
+#          e.g., [\"{root}\"] opens project root; [\"{config}\"] opens this file
 ";
 
 pub fn save_project_config(path: &Path, config: &ProjectConfig) -> Result<(), String> {
@@ -130,6 +131,56 @@ pub fn parse_project_selection(selected: &str) -> Result<usize, String> {
         .split_once(':')
         .and_then(|(index, _)| index.trim().parse::<usize>().ok())
         .ok_or_else(|| "invalid selection".to_string())
+}
+
+pub const SUPPORTED_EMULATORS: &[&str] = &["ghostty", "terminal"];
+
+pub fn is_supported_emulator(value: &str) -> bool {
+    SUPPORTED_EMULATORS.contains(&value)
+}
+
+fn unknown_key_error(key: &str) -> String {
+    format!("unknown config key {key:?} (supported: emulator)")
+}
+
+pub fn set_global_setting(
+    config: &mut GlobalConfig,
+    key: &str,
+    value: &str,
+) -> Result<String, String> {
+    match key {
+        "emulator" => {
+            if !is_supported_emulator(value) {
+                return Err(format!(
+                    "unsupported emulator {value:?} (supported: {})",
+                    SUPPORTED_EMULATORS.join(", ")
+                ));
+            }
+            config.emulator = Some(value.to_string());
+            Ok(format!("Set emulator = {value}"))
+        }
+        other => Err(unknown_key_error(other)),
+    }
+}
+
+pub fn get_global_setting(config: &GlobalConfig, key: &str) -> Result<String, String> {
+    match key {
+        "emulator" => Ok(match &config.emulator {
+            Some(v) => format!("emulator = {v}"),
+            None => "emulator is not set (auto-detect)".to_string(),
+        }),
+        other => Err(unknown_key_error(other)),
+    }
+}
+
+pub fn unset_global_setting(config: &mut GlobalConfig, key: &str) -> Result<String, String> {
+    match key {
+        "emulator" => {
+            config.emulator = None;
+            Ok("Unset emulator".to_string())
+        }
+        other => Err(unknown_key_error(other)),
+    }
 }
 
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {

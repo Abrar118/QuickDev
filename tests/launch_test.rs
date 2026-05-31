@@ -1,8 +1,9 @@
 #[cfg(not(target_os = "windows"))]
 use quickdev::launch::pgrep_args_for_process;
 use quickdev::launch::{
-    emulator_watch_process, escape_applescript_string, escape_powershell_single_quotes,
-    normalize_path, poll_until, resolve_app_args, resolve_terminal_path,
+    editor_args, emulator_watch_process, escape_applescript_string,
+    escape_powershell_single_quotes, normalize_path, poll_until, resolve_app_args,
+    resolve_terminal_path, PlaceholderContext,
 };
 use std::path::Path;
 
@@ -131,20 +132,61 @@ fn default_process_probe_uses_exact_name() {
     assert_eq!(pgrep_args_for_process("ghostty"), vec!["-x", "ghostty"]);
 }
 
-#[test]
-fn resolve_app_args_replaces_dot() {
-    let project_root = Path::new("/home/user/my-project");
-    let args = vec![".".to_string(), "--flag".to_string()];
-    let result = resolve_app_args(project_root, &args);
-    assert_eq!(result, vec!["/home/user/my-project", "--flag"]);
+fn sample_ctx() -> PlaceholderContext {
+    PlaceholderContext {
+        root: "/home/user/project".to_string(),
+        config: "/home/user/project/.quickdev.toml".to_string(),
+        name: "myproj".to_string(),
+        cwd: "/home/user/elsewhere".to_string(),
+    }
 }
 
 #[test]
-fn resolve_app_args_no_dot() {
-    let project_root = Path::new("/home/user/my-project");
-    let args = vec!["--verbose".to_string()];
-    let result = resolve_app_args(project_root, &args);
-    assert_eq!(result, vec!["--verbose"]);
+fn resolve_app_args_dot_aliases_root() {
+    let args = vec![".".to_string(), "--flag".to_string()];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec!["/home/user/project", "--flag"]
+    );
+}
+
+#[test]
+fn resolve_app_args_expands_root_substring() {
+    let args = vec!["{root}/README.md".to_string()];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec!["/home/user/project/README.md"]
+    );
+}
+
+#[test]
+fn resolve_app_args_expands_all_placeholders() {
+    let args = vec![
+        "{config}".to_string(),
+        "{name}".to_string(),
+        "{cwd}".to_string(),
+    ];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec![
+            "/home/user/project/.quickdev.toml",
+            "myproj",
+            "/home/user/elsewhere"
+        ]
+    );
+}
+
+#[test]
+fn resolve_app_args_leaves_plain_and_unknown_untouched() {
+    let args = vec![
+        "--verbose".to_string(),
+        "file.txt".to_string(),
+        "{unknown}".to_string(),
+    ];
+    assert_eq!(
+        resolve_app_args(&args, &sample_ctx()),
+        vec!["--verbose", "file.txt", "{unknown}"]
+    );
 }
 
 #[test]
@@ -239,7 +281,11 @@ fn plan_launch_marks_valid_items_success() {
         Some("/home/user/project/src · npm run dev".to_string())
     );
     assert!(plan[1].success);
-    assert_eq!(plan[1].detail.as_deref(), Some("/Applications/Cursor.app"));
+    // Cursor is an editor tool with no args — detail should include project root.
+    assert_eq!(
+        plan[1].detail.as_deref(),
+        Some("/Applications/Cursor.app · args: /home/user/project")
+    );
 }
 
 #[test]
@@ -269,6 +315,19 @@ fn plan_launch_includes_resolved_app_args_in_detail() {
 }
 
 #[test]
+fn resolve_app_args_does_not_double_expand_placeholder_values() {
+    let ctx = PlaceholderContext {
+        root: "/r".to_string(),
+        config: "/r/.quickdev.toml".to_string(),
+        name: "{cwd}".to_string(),
+        cwd: "/the/cwd".to_string(),
+    };
+    // {name} expands to the literal "{cwd}" and must NOT be re-expanded.
+    let args = vec!["{name}".to_string()];
+    assert_eq!(resolve_app_args(&args, &ctx), vec!["{cwd}"]);
+}
+
+#[test]
 fn plan_launch_flags_escaping_terminal_path() {
     use quickdev::launch::plan_launch;
     use quickdev::models::{ProjectConfig, ProjectEntry, TerminalEntry};
@@ -288,4 +347,48 @@ fn plan_launch_flags_escaping_terminal_path() {
     assert_eq!(plan.len(), 1);
     assert!(!plan[0].success);
     assert!(plan[0].error.is_some());
+}
+
+#[test]
+fn plan_launch_editor_app_without_args_previews_project_root() {
+    use quickdev::launch::plan_launch;
+    use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry};
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![AppEntry {
+            name: "Cursor".to_string(),
+            path: "/Applications/Cursor.app".to_string(),
+            args: None,
+        }],
+    };
+    let plan = plan_launch(&config, Path::new("/home/user/project"));
+    assert_eq!(plan.len(), 1);
+    let detail = plan[0].detail.as_deref().unwrap();
+    // editor tool with no args should preview opening the project root
+    assert!(
+        detail.contains("/home/user/project"),
+        "expected project root in detail, got: {detail}"
+    );
+}
+
+#[test]
+fn editor_args_uses_configured_args_when_present() {
+    let resolved = vec![
+        "/home/user/project".to_string(),
+        "--reuse-window".to_string(),
+    ];
+    assert_eq!(editor_args(Some(&resolved), "/home/user/project"), resolved);
+}
+
+#[test]
+fn editor_args_defaults_to_root_when_none_or_empty() {
+    assert_eq!(editor_args(None, "/root"), vec!["/root".to_string()]);
+    let empty: Vec<String> = vec![];
+    assert_eq!(
+        editor_args(Some(&empty), "/root"),
+        vec!["/root".to_string()]
+    );
 }
