@@ -49,7 +49,7 @@ enum Commands {
     },
     /// Launch terminals and applications for a project
     Launch {
-        /// Project name from the global index (omit to use current directory)
+        /// Project to launch from the global index (omit to use current directory); the picker still appears unless --all
         project: Option<String>,
         /// Launch all items without interactive selection
         #[arg(long)]
