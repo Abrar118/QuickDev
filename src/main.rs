@@ -4,6 +4,7 @@ mod config;
 mod fzf;
 mod launch;
 mod models;
+mod parse;
 
 use clap::{Parser, Subcommand};
 use config::{
@@ -465,7 +466,7 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
             let args = if args_input.is_empty() {
                 None
             } else {
-                Some(args_input.split_whitespace().map(String::from).collect())
+                Some(parse::parse_shell_args(&args_input)?)
             };
 
             config.applications.push(AppEntry {
@@ -657,9 +658,15 @@ fn cmd_edit(global: bool) -> Result<(), String> {
         path
     };
 
-    let editor = std::env::var("EDITOR").unwrap_or_else(|_| "vi".to_string());
+    let editor = std::env::var("VISUAL")
+        .or_else(|_| std::env::var("EDITOR"))
+        .unwrap_or_else(|_| "vi".to_string());
 
-    std::process::Command::new(&editor)
+    let parts = parse::parse_shell_args(&editor)?;
+    let (program, leading) = parts.split_first().ok_or("editor command is empty")?;
+
+    std::process::Command::new(program)
+        .args(leading)
         .arg(&config_path)
         .status()
         .map_err(|e| format!("failed to open editor '{}': {}", editor, e))?;
