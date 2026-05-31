@@ -89,13 +89,21 @@ pub fn poll_until(
     false
 }
 
-/// Whether a process with the exact name `name` is currently running.
+#[cfg(not(target_os = "windows"))]
+pub fn pgrep_args_for_process(name: &str) -> Vec<&str> {
+    if name == "gnome-terminal-server" {
+        vec!["-f", "gnome-terminal-server"]
+    } else {
+        vec!["-x", name]
+    }
+}
+
+/// Whether a process with the expected name or command line is currently running.
 fn process_running(name: &str) -> bool {
     #[cfg(not(target_os = "windows"))]
     {
         Command::new("pgrep")
-            .arg("-x")
-            .arg(name)
+            .args(pgrep_args_for_process(name))
             .stdout(std::process::Stdio::null())
             .stderr(std::process::Stdio::null())
             .status()
@@ -141,6 +149,13 @@ fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
     }
 }
 
+fn app_detail(path: &str, args: Option<&[String]>) -> String {
+    match args {
+        Some(args) if !args.is_empty() => format!("{path} · args: {}", args.join(" ")),
+        _ => path.to_string(),
+    }
+}
+
 /// Resolve what `launch_project` would launch, without spawning anything.
 /// Terminals that fail path resolution (e.g. escaping the project root) are
 /// returned as failures; everything else is a success carrying its `detail`.
@@ -165,12 +180,14 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
         }
     }
     for app in &config.applications {
+        let resolved_args: Option<Vec<String>> =
+            app.args.as_ref().map(|a| resolve_app_args(project_root, a));
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
             success: true,
             error: None,
-            detail: Some(app.path.clone()),
+            detail: Some(app_detail(&app.path, resolved_args.as_deref())),
         });
     }
     results
@@ -249,7 +266,7 @@ pub fn launch_project(
             kind: "app",
             success: result.is_ok(),
             error: result.err(),
-            detail: Some(app.path.clone()),
+            detail: Some(app_detail(&app.path, resolved_args.as_deref())),
         });
     }
 
@@ -262,7 +279,12 @@ pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result
     let rel = Path::new(relative_path);
     // `has_root()` catches POSIX-style absolute paths (e.g. "/etc/passwd") even on
     // Windows, where `is_absolute()` is false for them (it requires a drive prefix).
-    if rel.is_absolute() || rel.has_root() || rel.components().any(|c| c == Component::ParentDir) {
+    if rel.is_absolute()
+        || rel.has_root()
+        || rel
+            .components()
+            .any(|c| matches!(c, Component::ParentDir | Component::Prefix(_)))
+    {
         return Err(format!(
             "terminal path {relative_path:?} must stay inside the project root"
         ));

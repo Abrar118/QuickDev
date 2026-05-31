@@ -1,5 +1,5 @@
 use crate::fzf;
-use crate::models::{GlobalConfig, ProjectConfig};
+use crate::models::{GlobalConfig, GlobalProjectEntry, ProjectConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -98,6 +98,24 @@ pub fn unique_project_name(base_name: &str, config: &GlobalConfig) -> String {
         }
         suffix += 1;
     }
+}
+
+pub fn register_existing_project_config(
+    config_path: &Path,
+    project_path: String,
+    global: &mut GlobalConfig,
+) -> Result<String, String> {
+    let mut existing = load_project_config(config_path)?;
+    let project_name = unique_project_name(&existing.project.name, global);
+    if existing.project.name != project_name {
+        existing.project.name = project_name.clone();
+        save_project_config(config_path, &existing)?;
+    }
+    global.projects.push(GlobalProjectEntry {
+        name: project_name.clone(),
+        path: project_path,
+    });
+    Ok(project_name)
 }
 
 pub fn resolve_project_config(start: &Path) -> Result<(PathBuf, PathBuf), String> {

@@ -1,3 +1,5 @@
+#[cfg(not(target_os = "windows"))]
+use quickdev::launch::pgrep_args_for_process;
 use quickdev::launch::{
     emulator_watch_process, escape_applescript_string, escape_powershell_single_quotes,
     normalize_path, poll_until, resolve_app_args, resolve_terminal_path,
@@ -94,10 +96,39 @@ fn resolve_terminal_path_rejects_absolute() {
     assert!(resolve_terminal_path(project_root, "/etc/passwd").is_err());
 }
 
+#[cfg(windows)]
+#[test]
+fn resolve_terminal_path_rejects_windows_rooted_path() {
+    let project_root = Path::new(r"C:\Users\me\my-project");
+    assert!(resolve_terminal_path(project_root, r"\Users\me").is_err());
+}
+
+#[cfg(windows)]
+#[test]
+fn resolve_terminal_path_rejects_windows_drive_relative_path() {
+    let project_root = Path::new(r"C:\Users\me\my-project");
+    assert!(resolve_terminal_path(project_root, r"C:Users\me").is_err());
+}
+
 #[test]
 fn resolve_terminal_path_rejects_embedded_parent() {
     let project_root = Path::new("/home/user/my-project");
     assert!(resolve_terminal_path(project_root, "src/../../escape").is_err());
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn gnome_terminal_process_probe_uses_full_command_line() {
+    assert_eq!(
+        pgrep_args_for_process("gnome-terminal-server"),
+        vec!["-f", "gnome-terminal-server"]
+    );
+}
+
+#[cfg(not(target_os = "windows"))]
+#[test]
+fn default_process_probe_uses_exact_name() {
+    assert_eq!(pgrep_args_for_process("ghostty"), vec!["-x", "ghostty"]);
 }
 
 #[test]
@@ -209,6 +240,32 @@ fn plan_launch_marks_valid_items_success() {
     );
     assert!(plan[1].success);
     assert_eq!(plan[1].detail.as_deref(), Some("/Applications/Cursor.app"));
+}
+
+#[test]
+fn plan_launch_includes_resolved_app_args_in_detail() {
+    use quickdev::launch::plan_launch;
+    use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry};
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![AppEntry {
+            name: "Cursor".to_string(),
+            path: "/Applications/Cursor.app".to_string(),
+            args: Some(vec![".".to_string(), "--flag".to_string()]),
+        }],
+    };
+
+    let plan = plan_launch(&config, Path::new("/home/user/project"));
+
+    assert_eq!(plan.len(), 1);
+    assert!(plan[0].success);
+    assert_eq!(
+        plan[0].detail.as_deref(),
+        Some("/Applications/Cursor.app · args: /home/user/project --flag")
+    );
 }
 
 #[test]
