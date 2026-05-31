@@ -27,6 +27,7 @@ fn main() {
         Commands::Remove { kind } => commands::cmd_remove(kind),
         Commands::Edit { global } => commands::cmd_edit(global),
         Commands::Deregister { delete } => commands::cmd_deregister(delete),
+        Commands::Config { action } => commands::cmd_config(action),
     };
 
     if let Err(e) = result {

@@ -132,20 +132,16 @@ pub fn parse_project_selection(selected: &str) -> Result<usize, String> {
         .ok_or_else(|| "invalid selection".to_string())
 }
 
-#[allow(dead_code)]
 pub const SUPPORTED_EMULATORS: &[&str] = &["ghostty", "terminal"];
 
-#[allow(dead_code)]
 pub fn is_supported_emulator(value: &str) -> bool {
     SUPPORTED_EMULATORS.contains(&value)
 }
 
-#[allow(dead_code)]
 fn unknown_key_error(key: &str) -> String {
     format!("unknown config key {key:?} (supported: emulator)")
 }
 
-#[allow(dead_code)]
 pub fn set_global_setting(
     config: &mut GlobalConfig,
     key: &str,
@@ -166,7 +162,6 @@ pub fn set_global_setting(
     }
 }
 
-#[allow(dead_code)]
 pub fn get_global_setting(config: &GlobalConfig, key: &str) -> Result<String, String> {
     match key {
         "emulator" => Ok(match &config.emulator {
@@ -177,7 +172,6 @@ pub fn get_global_setting(config: &GlobalConfig, key: &str) -> Result<String, St
     }
 }
 
-#[allow(dead_code)]
 pub fn unset_global_setting(config: &mut GlobalConfig, key: &str) -> Result<String, String> {
     match key {
         "emulator" => {
