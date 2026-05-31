@@ -15,7 +15,6 @@ pub fn escape_powershell_single_quotes(s: &str) -> String {
     s.replace('\'', "''")
 }
 
-#[allow(dead_code)]
 pub struct LaunchResult {
     pub label: String,
     pub kind: &'static str,
@@ -27,7 +26,6 @@ pub struct LaunchResult {
 /// Render a launch/plan summary: a header line followed by one ✓/✗ line per
 /// item. Success lines append ` — {detail}` when a detail is present; failure
 /// lines append ` — {error}`. Returns the full block (trailing newline included).
-#[allow(dead_code)]
 pub fn render_results(header: &str, results: &[LaunchResult]) -> String {
     let mut out = format!("{header}\n");
     for r in results {
@@ -146,7 +144,6 @@ fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
 /// Resolve what `launch_project` would launch, without spawning anything.
 /// Terminals that fail path resolution (e.g. escaping the project root) are
 /// returned as failures; everything else is a success carrying its `detail`.
-#[allow(dead_code)]
 pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchResult> {
     let mut results = Vec::new();
     for terminal in &config.terminals {

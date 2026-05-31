@@ -3,12 +3,12 @@ use crate::config::{
     global_config_path, load_global_config, load_project_config, resolve_project_config,
 };
 use crate::fzf;
-use crate::launch::{launch_project, LaunchResult};
+use crate::launch::{launch_project, plan_launch, render_results};
 use crate::models::ProjectConfig;
 use std::path::PathBuf;
 use std::process;
 
-pub(crate) fn cmd_launch(project: Option<String>, all: bool) -> Result<(), String> {
+pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> Result<(), String> {
     let global_path = global_config_path();
     let global = load_global_config(&global_path)?;
 
@@ -65,8 +65,25 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool) -> Result<(), Strin
         config
     };
 
+    if dry_run {
+        let plan = plan_launch(&config, &project_root);
+        let would = plan.iter().filter(|r| r.success).count();
+        print!(
+            "{}",
+            render_results(&format!("Would launch {would} items:"), &plan)
+        );
+        return Ok(());
+    }
+
     let results = launch_project(&config, &project_root, global.emulator.as_deref());
-    print_launch_summary(&results);
+    let success = results.iter().filter(|r| r.success).count();
+    print!(
+        "{}",
+        render_results(
+            &format!("Launched {success}/{} items:", results.len()),
+            &results
+        )
+    );
 
     let any_success = results.iter().any(|r| r.success);
     if !any_success {
@@ -74,19 +91,4 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool) -> Result<(), Strin
     }
 
     Ok(())
-}
-
-fn print_launch_summary(results: &[LaunchResult]) {
-    let success_count = results.iter().filter(|r| r.success).count();
-    let total = results.len();
-
-    println!("Launched {}/{} items:", success_count, total);
-    for r in results {
-        if r.success {
-            println!("  [ok] {} ({})", r.label, r.kind);
-        } else {
-            let err = r.error.as_deref().unwrap_or("unknown error");
-            println!("  [FAIL] {} — {}", r.label, err);
-        }
-    }
 }

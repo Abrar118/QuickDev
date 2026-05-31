@@ -38,6 +38,9 @@ pub(crate) enum Commands {
         /// Launch all items without interactive selection
         #[arg(long)]
         all: bool,
+        /// Print what would launch without starting anything
+        #[arg(long)]
+        dry_run: bool,
     },
     /// List all indexed projects
     List,

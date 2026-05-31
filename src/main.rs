@@ -17,7 +17,11 @@ fn main() {
 
     let result = match cli.command {
         Commands::Init { from } => commands::cmd_init(from),
-        Commands::Launch { project, all } => commands::cmd_launch(project, all),
+        Commands::Launch {
+            project,
+            all,
+            dry_run,
+        } => commands::cmd_launch(project, all, dry_run),
         Commands::List => commands::cmd_list(),
         Commands::Add { kind } => commands::cmd_add(kind),
         Commands::Remove { kind } => commands::cmd_remove(kind),
