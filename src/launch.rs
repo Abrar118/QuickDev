@@ -22,12 +22,119 @@ pub struct LaunchResult {
     pub error: Option<String>,
 }
 
+/// Long-running process name to watch as a readiness proxy for the emulator
+/// that terminal #0 will cold-start. Returns `None` when we can't determine it,
+/// in which case the caller treats the emulator as already warm (no extra wait).
+pub fn emulator_watch_process(
+    emulator: Option<&str>,
+    ghostty_available: bool,
+    os: &str,
+) -> Option<&'static str> {
+    match emulator {
+        Some("ghostty") => Some("ghostty"),
+        Some("terminal") => native_terminal_process(os),
+        Some(_) => None,
+        None => {
+            if ghostty_available {
+                Some("ghostty")
+            } else {
+                native_terminal_process(os)
+            }
+        }
+    }
+}
+
+fn native_terminal_process(os: &str) -> Option<&'static str> {
+    match os {
+        "macos" => Some("Terminal"),
+        "linux" => Some("gnome-terminal-server"),
+        "windows" => Some("WindowsTerminal.exe"),
+        _ => None,
+    }
+}
+
+/// Poll `ready` up to `attempts` times, sleeping `interval` between checks.
+/// Returns true as soon as `ready` is satisfied, false if it never is.
+pub fn poll_until(
+    mut ready: impl FnMut() -> bool,
+    attempts: u32,
+    interval: std::time::Duration,
+) -> bool {
+    for _ in 0..attempts {
+        if ready() {
+            return true;
+        }
+        std::thread::sleep(interval);
+    }
+    false
+}
+
+/// Whether a process with the exact name `name` is currently running.
+fn process_running(name: &str) -> bool {
+    #[cfg(not(target_os = "windows"))]
+    {
+        Command::new("pgrep")
+            .arg("-x")
+            .arg(name)
+            .stdout(std::process::Stdio::null())
+            .stderr(std::process::Stdio::null())
+            .status()
+            .map(|s| s.success())
+            .unwrap_or(false)
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        Command::new("tasklist")
+            .args(["/FI", &format!("IMAGENAME eq {name}")])
+            .output()
+            .map(|o| {
+                String::from_utf8_lossy(&o.stdout)
+                    .to_lowercase()
+                    .contains(&name.to_lowercase())
+            })
+            .unwrap_or(false)
+    }
+}
+
+/// After cold-starting the emulator, wait until its process is up and has had a
+/// brief moment to settle, so subsequent terminals don't race its startup.
+fn wait_for_emulator_ready(name: &str) {
+    const ATTEMPTS: u32 = 30;
+    let appeared = poll_until(
+        || process_running(name),
+        ATTEMPTS,
+        std::time::Duration::from_millis(100),
+    );
+    if appeared {
+        // Process exists; give it a moment to be ready to accept new windows.
+        std::thread::sleep(std::time::Duration::from_millis(500));
+    }
+}
+
 pub fn launch_project(
     config: &ProjectConfig,
     project_root: &Path,
     global_emulator: Option<&str>,
 ) -> Vec<LaunchResult> {
     let mut results = Vec::new();
+
+    // Every supported emulator (Ghostty, Terminal.app, gnome-terminal, Windows
+    // Terminal) is single-instance. Terminal #0 cold-starts it; if the rest fire
+    // before that instance is ready, they race its startup and open bare shells.
+    // So when the emulator wasn't already running, wait for it to become ready
+    // after terminal #0 before launching the others. Warm runs skip the wait.
+    let first_emulator = config
+        .terminals
+        .first()
+        .and_then(|t| t.emulator.as_deref())
+        .or(global_emulator);
+    let ghostty_available = launch_command_for_tool(std::env::consts::OS, "ghostty")
+        .map(command_exists)
+        .unwrap_or(false);
+    let watch = emulator_watch_process(first_emulator, ghostty_available, std::env::consts::OS);
+    let emulator_was_running = watch.map(process_running).unwrap_or(true);
+    let multiple = config.terminals.len() > 1;
 
     for (i, terminal) in config.terminals.iter().enumerate() {
         if i > 0 {
@@ -58,6 +165,12 @@ pub fn launch_project(
             success: result.is_ok(),
             error: result.err(),
         });
+
+        if i == 0 && multiple && !emulator_was_running {
+            if let Some(name) = watch {
+                wait_for_emulator_ready(name);
+            }
+        }
     }
 
     for app in &config.applications {
