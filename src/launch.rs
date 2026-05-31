@@ -143,6 +143,42 @@ fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
     }
 }
 
+/// Resolve what `launch_project` would launch, without spawning anything.
+/// Terminals that fail path resolution (e.g. escaping the project root) are
+/// returned as failures; everything else is a success carrying its `detail`.
+#[allow(dead_code)]
+pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchResult> {
+    let mut results = Vec::new();
+    for terminal in &config.terminals {
+        match resolve_terminal_path(project_root, &terminal.path) {
+            Ok(resolved_path) => results.push(LaunchResult {
+                label: terminal.name.clone(),
+                kind: "terminal",
+                success: true,
+                error: None,
+                detail: Some(terminal_detail(&resolved_path, terminal.command.as_deref())),
+            }),
+            Err(e) => results.push(LaunchResult {
+                label: terminal.name.clone(),
+                kind: "terminal",
+                success: false,
+                error: Some(e),
+                detail: None,
+            }),
+        }
+    }
+    for app in &config.applications {
+        results.push(LaunchResult {
+            label: app.name.clone(),
+            kind: "app",
+            success: true,
+            error: None,
+            detail: Some(app.path.clone()),
+        });
+    }
+    results
+}
+
 pub fn launch_project(
     config: &ProjectConfig,
     project_root: &Path,

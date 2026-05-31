@@ -174,3 +174,56 @@ fn render_results_formats_success_detail_and_failure() {
         "Launched 2/3 items:\n  ✓ terminal dev — /home/user/p · npm run dev\n  ✓ app Cursor — /Applications/Cursor.app\n  ✗ terminal logs — bad path\n"
     );
 }
+
+#[test]
+fn plan_launch_marks_valid_items_success() {
+    use quickdev::launch::plan_launch;
+    use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry, TerminalEntry};
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![TerminalEntry {
+            name: "dev".to_string(),
+            path: "./src".to_string(),
+            command: Some("npm run dev".to_string()),
+            emulator: None,
+        }],
+        applications: vec![AppEntry {
+            name: "Cursor".to_string(),
+            path: "/Applications/Cursor.app".to_string(),
+            args: None,
+        }],
+    };
+    let plan = plan_launch(&config, Path::new("/home/user/project"));
+    assert_eq!(plan.len(), 2);
+    assert!(plan[0].success);
+    assert_eq!(
+        plan[0].detail.as_deref(),
+        Some("/home/user/project/src · npm run dev")
+    );
+    assert!(plan[1].success);
+    assert_eq!(plan[1].detail.as_deref(), Some("/Applications/Cursor.app"));
+}
+
+#[test]
+fn plan_launch_flags_escaping_terminal_path() {
+    use quickdev::launch::plan_launch;
+    use quickdev::models::{ProjectConfig, ProjectEntry, TerminalEntry};
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![TerminalEntry {
+            name: "bad".to_string(),
+            path: "../escape".to_string(),
+            command: None,
+            emulator: None,
+        }],
+        applications: vec![],
+    };
+    let plan = plan_launch(&config, Path::new("/home/user/project"));
+    assert_eq!(plan.len(), 1);
+    assert!(!plan[0].success);
+    assert!(plan[0].error.is_some());
+}
