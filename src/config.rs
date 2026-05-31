@@ -183,6 +183,67 @@ pub fn unset_global_setting(config: &mut GlobalConfig, key: &str) -> Result<Stri
     }
 }
 
+/// Health of a registered project: its directory and its `.quickdev.toml` must both exist.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ProjectStatus {
+    pub name: String,
+    pub path: String,
+    pub path_exists: bool,
+    pub config_exists: bool,
+}
+
+impl ProjectStatus {
+    pub fn is_healthy(&self) -> bool {
+        self.path_exists && self.config_exists
+    }
+
+    pub fn issue(&self) -> Option<&'static str> {
+        if !self.path_exists {
+            Some("path missing")
+        } else if !self.config_exists {
+            Some(".quickdev.toml missing")
+        } else {
+            None
+        }
+    }
+}
+
+pub fn project_status(entry: &GlobalProjectEntry) -> ProjectStatus {
+    let path = Path::new(&entry.path);
+    let path_exists = path.exists();
+    let config_exists = path.join(".quickdev.toml").exists();
+    ProjectStatus {
+        name: entry.name.clone(),
+        path: entry.path.clone(),
+        path_exists,
+        config_exists,
+    }
+}
+
+pub fn project_statuses(global: &GlobalConfig) -> Vec<ProjectStatus> {
+    global.projects.iter().map(project_status).collect()
+}
+
+/// Subset of statuses that are not healthy (path or config missing).
+pub fn missing_statuses(statuses: &[ProjectStatus]) -> Vec<&ProjectStatus> {
+    statuses.iter().filter(|s| !s.is_healthy()).collect()
+}
+
+/// Removes registrations whose path or `.quickdev.toml` is missing.
+/// Returns the names of removed projects, in their original order.
+pub fn prune_projects(global: &mut GlobalConfig) -> Vec<String> {
+    let mut removed = Vec::new();
+    global.projects.retain(|entry| {
+        if project_status(entry).is_healthy() {
+            true
+        } else {
+            removed.push(entry.name.clone());
+            false
+        }
+    });
+    removed
+}
+
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     let global_path = global_config_path();
     let global = load_global_config(&global_path)?;

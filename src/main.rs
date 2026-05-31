@@ -28,6 +28,7 @@ fn main() {
         Commands::Edit { global } => commands::cmd_edit(global),
         Commands::Deregister { delete } => commands::cmd_deregister(delete),
         Commands::Config { action } => commands::cmd_config(action),
+        Commands::Prune => commands::cmd_prune(),
     };
 
     if let Err(e) = result {
