@@ -281,7 +281,11 @@ fn plan_launch_marks_valid_items_success() {
         Some("/home/user/project/src · npm run dev".to_string())
     );
     assert!(plan[1].success);
-    assert_eq!(plan[1].detail.as_deref(), Some("/Applications/Cursor.app"));
+    // Cursor is an editor tool with no args — detail should include project root.
+    assert_eq!(
+        plan[1].detail.as_deref(),
+        Some("/Applications/Cursor.app · args: /home/user/project")
+    );
 }
 
 #[test]
@@ -343,6 +347,31 @@ fn plan_launch_flags_escaping_terminal_path() {
     assert_eq!(plan.len(), 1);
     assert!(!plan[0].success);
     assert!(plan[0].error.is_some());
+}
+
+#[test]
+fn plan_launch_editor_app_without_args_previews_project_root() {
+    use quickdev::launch::plan_launch;
+    use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry};
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![AppEntry {
+            name: "Cursor".to_string(),
+            path: "/Applications/Cursor.app".to_string(),
+            args: None,
+        }],
+    };
+    let plan = plan_launch(&config, Path::new("/home/user/project"));
+    assert_eq!(plan.len(), 1);
+    let detail = plan[0].detail.as_deref().unwrap();
+    // editor tool with no args should preview opening the project root
+    assert!(
+        detail.contains("/home/user/project"),
+        "expected project root in detail, got: {detail}"
+    );
 }
 
 #[test]

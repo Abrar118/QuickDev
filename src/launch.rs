@@ -194,17 +194,27 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
         }
     }
     let placeholder_ctx = make_placeholder_ctx(config, project_root);
+    let root_str = project_root.to_string_lossy().to_string();
     for app in &config.applications {
         let resolved_args: Option<Vec<String>> = app
             .args
             .as_ref()
             .map(|a| resolve_app_args(a, &placeholder_ctx));
+        // Mirror launch_application: editor tools open the project root when no
+        // args are configured, so the dry-run preview matches a real launch.
+        let effective_args: Option<Vec<String>> =
+            match infer_tool_id(&app.name, &normalize_path(&app.path)) {
+                Some(tid) if is_editor_tool(&tid) => {
+                    Some(editor_args(resolved_args.as_deref(), &root_str))
+                }
+                _ => resolved_args,
+            };
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
             success: true,
             error: None,
-            detail: Some(app_detail(&app.path, resolved_args.as_deref())),
+            detail: Some(app_detail(&app.path, effective_args.as_deref())),
         });
     }
     results
