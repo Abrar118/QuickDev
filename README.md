@@ -131,9 +131,12 @@ quickdev launch                  # Interactive picker (select items with fzf)
 quickdev launch my-api           # Interactive picker for a project by name
 quickdev launch --all            # Launch everything without picker
 quickdev launch my-api --all     # Launch everything for a named project
+quickdev launch --dry-run        # Preview what would launch without opening anything
 ```
 
 When run without `--all`, an fzf multi-select picker appears — whether you launch the current project or name one explicitly. Use `TAB` to toggle items and `ENTER` to launch. If only one item is configured, it launches directly.
+
+Application `args` support placeholders like `{root}`, `{name}`, and `{cwd}` — see [Application argument placeholders](#application-argument-placeholders).
 
 ### `quickdev list`
 
@@ -281,6 +284,28 @@ path = "/Applications/Docker.app"
 | `path` | yes | Executable or `.app` bundle path |
 | `args` | no | Arguments passed to the application (e.g., `["."]` to open project root) |
 
+#### Application argument placeholders
+
+`args` entries support placeholders, substituted at launch time:
+
+| Placeholder | Expands to |
+|-------------|------------|
+| `{root}`    | project root absolute path |
+| `{config}`  | absolute path to the project's `.quickdev.toml` |
+| `{name}`    | project name |
+| `{cwd}`     | the directory you ran `quickdev` from |
+
+A bare `"."` still means `{root}` (backward compatible). Placeholders are substituted as substrings, so `"{root}/README.md"` works.
+
+```toml
+[[applications]]
+name = "Cursor"
+path = "/Applications/Cursor.app"
+args = ["{root}", "--reuse-window"]
+```
+
+For editor tools (VS Code / Cursor / Zed): if `args` are provided they are used as-is; otherwise the project root is opened by default.
+
 ### Global Config — `~/Documents/quickdev/config.toml`
 
 The global index is auto-managed. You can set a default terminal emulator here:
@@ -308,6 +333,16 @@ When launching a terminal, QuickDev checks:
 3. **Auto-detect** (lowest priority)
 
 Auto-detect tries Ghostty first, then falls back to the platform default.
+
+### Managing the default emulator
+
+Set the global default terminal emulator without hand-editing the global config:
+
+```bash
+quickdev config set emulator ghostty   # ghostty | terminal
+quickdev config get emulator
+quickdev config unset emulator
+```
 
 ## Terminal Emulator Support
 

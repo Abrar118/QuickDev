@@ -61,7 +61,8 @@ const TOML_COMMENT_HEADER: &str = "\
 # [[applications]]
 #   name = Application display name
 #   path = Executable path or .app bundle (e.g., \"/Applications/Cursor.app\")
-#   args = (optional) Arguments list (e.g., [\".\"] to open project root)
+#   args = (optional) Arguments list. Placeholders: {root} {config} {name} {cwd}
+#          e.g., [\"{root}\"] opens project root; [\"{config}\"] opens this file
 ";
 
 pub fn save_project_config(path: &Path, config: &ProjectConfig) -> Result<(), String> {
