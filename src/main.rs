@@ -167,8 +167,12 @@ fn cmd_init(from: Option<String>) -> Result<(), String> {
     }
 
     if config_path.exists() && !already_indexed {
-        let existing = load_project_config(&config_path)?;
+        let mut existing = load_project_config(&config_path)?;
         let project_name = unique_project_name(&existing.project.name, &global);
+        if existing.project.name != project_name {
+            existing.project.name = project_name.clone();
+            save_project_config(&config_path, &existing)?;
+        }
         global.projects.push(GlobalProjectEntry {
             name: project_name.clone(),
             path: cwd_str,

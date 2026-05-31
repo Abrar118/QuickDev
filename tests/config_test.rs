@@ -218,6 +218,40 @@ fn parse_project_selection_rejects_garbage() {
 }
 
 #[test]
+fn renamed_project_config_persists() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    let cfg = ProjectConfig {
+        project: ProjectEntry {
+            name: "api".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+    save_project_config(&config_path, &cfg).unwrap();
+
+    // Global already has "api" -> init must pick a unique name.
+    let global = GlobalConfig {
+        emulator: None,
+        projects: vec![GlobalProjectEntry {
+            name: "api".to_string(),
+            path: "/tmp/other".to_string(),
+        }],
+    };
+    let unique = unique_project_name("api", &global);
+    assert_eq!(unique, "api-2");
+
+    // The fix writes the unique name back to the local config.
+    let mut existing = load_project_config(&config_path).unwrap();
+    existing.project.name = unique.clone();
+    save_project_config(&config_path, &existing).unwrap();
+
+    let reloaded = load_project_config(&config_path).unwrap();
+    assert_eq!(reloaded.project.name, "api-2");
+}
+
+#[test]
 fn save_global_config_adds_comment_header() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join("config.toml");
