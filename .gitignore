@@ -6,3 +6,7 @@
 .quickdev.toml
 AGENTS.md
 CLAUDE.md
+
+# npm wrapper build artifacts (downloaded at install / produced by npm pack)
+packaging/npm/binaries/
+packaging/npm/*.tgz
