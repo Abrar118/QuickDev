@@ -44,9 +44,23 @@ Expand-Archive quickdev-windows-x86_64.zip -DestinationPath .
 Move-Item quickdev.exe C:\Windows\System32\
 ```
 
-### Option 2: Build from Source
+### Option 2: Install via a Package Manager
 
-Requires [Rust](https://rustup.rs/) 1.70+.
+**Cargo** (builds from source; requires a [Rust](https://rustup.rs/) toolchain):
+
+```bash
+cargo install quickdev
+```
+
+**npm** (downloads the prebuilt binary; requires network access at install):
+
+```bash
+npm install -g quickdev
+```
+
+### Option 3: Build from Source
+
+Requires [Rust](https://rustup.rs/) 1.85+.
 
 ```bash
 git clone https://github.com/Abrar118/QuickDev.git
