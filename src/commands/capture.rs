@@ -5,12 +5,15 @@ use crate::fzf;
 use crate::models::AppEntry;
 
 pub(crate) fn cmd_capture(all: bool) -> Result<(), String> {
-    let cwd = std::env::current_dir().map_err(|e| format!("failed to read current dir: {e}"))?;
-    let (config_path, _root) = config::find_project_config(&cwd)?;
-
+    // Fail fast off-macOS before any filesystem or picker work.
     if !cfg!(target_os = "macos") {
         return Err("capture is only supported on macOS".to_string());
     }
+
+    let cwd = std::env::current_dir().map_err(|e| format!("failed to read current dir: {e}"))?;
+    // resolve_project_config (not find_project_config) so that, like add/edit,
+    // running outside a project tree opens the fzf project picker.
+    let (config_path, _root) = config::resolve_project_config(&cwd)?;
 
     // Propagate osascript failures (e.g. denied Automation permission) instead
     // of treating them as "nothing running".
