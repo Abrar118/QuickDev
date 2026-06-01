@@ -271,6 +271,21 @@ quickdev doctor --fix    # Create missing global config, prune dead registration
                          # and normalize project configs to canonical form
 ```
 
+### `quickdev capture`
+
+Snapshot the macOS GUI apps you currently have running and add the ones you pick
+into this project's `.quickdev.toml`:
+
+```bash
+quickdev capture        # interactive multi-select (requires fzf)
+quickdev capture --all  # add all detected apps without prompting
+```
+
+Only running apps installed in `/Applications` or `~/Applications` are offered, and
+apps already in your config are skipped. macOS only. The first run may prompt for
+Automation/Accessibility permission so QuickDev can read the list of running apps via
+System Events.
+
 ## Configuration
 
 ### Project Config — `.quickdev.toml`
