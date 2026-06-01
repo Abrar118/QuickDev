@@ -57,7 +57,10 @@ fn select_apps(candidates: &[AppEntry], all: bool) -> Result<Vec<AppEntry>, Stri
         .iter()
         .map(|a| format!("{}\t{}", a.name, a.path))
         .collect();
-    let picked = fzf::fzf_select_multi(&items, "Select apps to capture")?;
+    let picked = fzf::fzf_select_multi(
+        &items,
+        "Select apps to capture (TAB to toggle, ENTER to confirm):",
+    )?;
     let picked_paths: Vec<&str> = picked
         .iter()
         .filter_map(|line| line.split('\t').nth(1))
