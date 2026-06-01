@@ -38,3 +38,19 @@ pub fn detected_to_apps(running_paths: &[String], installed: &[(String, String)]
     apps.sort_by_key(|a| a.name.to_lowercase());
     apps
 }
+
+/// Return the captured apps not already present in `existing`, compared by
+/// normalized `path` (trailing-slash-insensitive, via `normalize_bundle_path`),
+/// preserving the order of `captured`.
+pub fn merge_apps(existing: &[AppEntry], captured: &[AppEntry]) -> Vec<AppEntry> {
+    captured
+        .iter()
+        .filter(|c| {
+            let cn = normalize_bundle_path(&c.path);
+            !existing
+                .iter()
+                .any(|e| normalize_bundle_path(&e.path) == cn)
+        })
+        .cloned()
+        .collect()
+}

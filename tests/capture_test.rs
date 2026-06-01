@@ -1,4 +1,5 @@
 use quickdev::capture::detected_to_apps;
+use quickdev::capture::merge_apps;
 use quickdev::models::AppEntry;
 
 fn installed() -> Vec<(String, String)> {
@@ -83,4 +84,60 @@ fn normalize_bundle_path_strips_single_trailing_slash() {
         normalize_bundle_path("/Applications/Cursor.app"),
         "/Applications/Cursor.app"
     );
+}
+
+fn app(name: &str, path: &str) -> AppEntry {
+    AppEntry {
+        name: name.to_string(),
+        path: path.to_string(),
+        args: None,
+    }
+}
+
+#[test]
+fn merge_apps_skips_already_present_by_path() {
+    let existing = vec![app("Cursor", "/Applications/Cursor.app")];
+    let captured = vec![
+        app("Cursor", "/Applications/Cursor.app"),
+        app("Firefox", "/Applications/Firefox.app"),
+    ];
+    let new = merge_apps(&existing, &captured);
+    assert_eq!(new, vec![app("Firefox", "/Applications/Firefox.app")]);
+}
+
+#[test]
+fn merge_apps_matches_on_path_not_name() {
+    // Same path, different display name in config -> still considered present.
+    let existing = vec![app("My Editor", "/Applications/Cursor.app")];
+    let captured = vec![app("Cursor", "/Applications/Cursor.app")];
+    let new = merge_apps(&existing, &captured);
+    assert!(new.is_empty());
+}
+
+#[test]
+fn merge_apps_treats_trailing_slash_as_same_path() {
+    // Hand-edited config with a trailing slash must not produce a duplicate.
+    let existing = vec![app("Cursor", "/Applications/Cursor.app/")];
+    let captured = vec![app("Cursor", "/Applications/Cursor.app")];
+    let new = merge_apps(&existing, &captured);
+    assert!(new.is_empty());
+}
+
+#[test]
+fn merge_apps_preserves_captured_order() {
+    let existing: Vec<AppEntry> = vec![];
+    let captured = vec![
+        app("Slack", "/Applications/Slack.app"),
+        app("Firefox", "/Applications/Firefox.app"),
+    ];
+    let new = merge_apps(&existing, &captured);
+    let names: Vec<&str> = new.iter().map(|a| a.name.as_str()).collect();
+    assert_eq!(names, vec!["Slack", "Firefox"]);
+}
+
+#[test]
+fn merge_apps_empty_captured_is_empty() {
+    let existing = vec![app("Cursor", "/Applications/Cursor.app")];
+    let new = merge_apps(&existing, &[]);
+    assert!(new.is_empty());
 }
