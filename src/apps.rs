@@ -1,4 +1,25 @@
+/// Installed `.app` bundles as `(name, path)`, sorted by name and deduplicated
+/// by name (keeping the first by sort order). Used by the `add` picker, where a
+/// single entry per display name is what the user wants.
 pub fn discover_apps() -> Vec<(String, String)> {
+    let mut apps = installed_app_bundles();
+    apps.dedup_by(|a, b| a.0 == b.0);
+    apps
+}
+
+/// Installed `.app` bundles as `(name, path)`, sorted by name, unique by path
+/// (NO name deduplication). `capture` matches running apps by path, so it must
+/// see every bundle path even when `/Applications` and `~/Applications` hold a
+/// same-named app — `discover_apps`'s name dedup would otherwise hide one of
+/// them and capture would silently drop a running app installed there.
+pub fn discover_apps_unique_by_path() -> Vec<(String, String)> {
+    installed_app_bundles()
+}
+
+/// Scan `/Applications` and `~/Applications` for `.app` bundles, returning
+/// `(name, path)` sorted by name. Bundle paths are inherently unique, so no
+/// deduplication is applied here; callers dedup by name if they need to.
+fn installed_app_bundles() -> Vec<(String, String)> {
     #[cfg(target_os = "macos")]
     {
         let mut apps = Vec::new();
@@ -33,7 +54,6 @@ pub fn discover_apps() -> Vec<(String, String)> {
         }
 
         apps.sort_by_key(|a| a.0.to_lowercase());
-        apps.dedup_by(|a, b| a.0 == b.0);
         apps
     }
 

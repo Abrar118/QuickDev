@@ -18,7 +18,10 @@ pub(crate) fn cmd_capture(all: bool) -> Result<(), String> {
     // Propagate osascript failures (e.g. denied Automation permission) instead
     // of treating them as "nothing running".
     let running = detect_running_apps()?;
-    let installed = apps::discover_apps();
+    // Path-unique (not discover_apps, which dedups by name): capture matches by
+    // path, so it must see a same-named app in both /Applications and
+    // ~/Applications rather than silently dropping the one name-dedup hides.
+    let installed = apps::discover_apps_unique_by_path();
     let candidates = detected_to_apps(&running, &installed);
 
     let mut project = config::load_project_config(&config_path)?;
@@ -41,8 +44,10 @@ pub(crate) fn cmd_capture(all: bool) -> Result<(), String> {
 }
 
 /// Choose which candidate apps to add. With `all`, take everything; otherwise
-/// fzf multi-select on "Name\tpath" lines, matching selections back by path.
-/// An empty/cancelled selection surfaces as the `fzf::CANCELLED` sentinel.
+/// fzf multi-select. Each line is prefixed with its candidate index ("0\tName —
+/// path") and selections are mapped back by that leading index, so a tab in an
+/// app name or path can't corrupt the round-trip. An empty/cancelled selection
+/// surfaces as the `fzf::CANCELLED` sentinel.
 fn select_apps(candidates: &[AppEntry], all: bool) -> Result<Vec<AppEntry>, String> {
     if all {
         return Ok(candidates.to_vec());
@@ -55,19 +60,22 @@ fn select_apps(candidates: &[AppEntry], all: bool) -> Result<Vec<AppEntry>, Stri
     }
     let items: Vec<String> = candidates
         .iter()
-        .map(|a| format!("{}\t{}", a.name, a.path))
+        .enumerate()
+        .map(|(i, a)| format!("{i}\t{} — {}", a.name, a.path))
         .collect();
     let picked = fzf::fzf_select_multi(
         &items,
         "Select apps to capture (TAB to toggle, ENTER to confirm):",
     )?;
-    let picked_paths: Vec<&str> = picked
+    let picked_indices: Vec<usize> = picked
         .iter()
-        .filter_map(|line| line.split('\t').nth(1))
+        .filter_map(|line| line.split('\t').next())
+        .filter_map(|idx| idx.parse::<usize>().ok())
         .collect();
     Ok(candidates
         .iter()
-        .filter(|a| picked_paths.contains(&a.path.as_str()))
-        .cloned()
+        .enumerate()
+        .filter(|(i, _)| picked_indices.contains(i))
+        .map(|(_, a)| a.clone())
         .collect())
 }
