@@ -33,6 +33,7 @@ fn main() {
         Commands::Prune => commands::cmd_prune(),
         Commands::Validate => commands::cmd_validate(),
         Commands::Doctor { fix } => commands::cmd_doctor(fix),
+        Commands::Capture { all } => commands::cmd_capture(all),
     };
 
     if let Err(e) = result {

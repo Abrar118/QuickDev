@@ -1,4 +1,5 @@
 pub(crate) mod add;
+pub(crate) mod capture;
 pub(crate) mod config;
 pub(crate) mod deregister;
 pub(crate) mod doctor;
@@ -11,6 +12,7 @@ pub(crate) mod remove;
 pub(crate) mod shared;
 pub(crate) mod validate;
 pub(crate) use add::cmd_add;
+pub(crate) use capture::cmd_capture;
 pub(crate) use config::cmd_config;
 pub(crate) use deregister::cmd_deregister;
 pub(crate) use doctor::cmd_doctor;
