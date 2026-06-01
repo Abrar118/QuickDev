@@ -119,7 +119,9 @@ pub fn parse_exec(exec: &str) -> (String, Vec<String>) {
 /// picker, where a single entry per display name is what the user wants.
 pub fn discover_apps() -> Vec<AppEntry> {
     let mut apps = installed_apps();
-    apps.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
+    // Match the case-insensitive (Unicode-aware) sort used in `installed_apps`
+    // so non-ASCII same-name duplicates dedup too.
+    apps.dedup_by(|a, b| a.name.to_lowercase() == b.name.to_lowercase());
     apps
 }
 
@@ -287,14 +289,15 @@ fn resolve_lnk(path: &std::path::Path) -> Option<AppEntry> {
 
     let name = path.file_stem()?.to_string_lossy().to_string();
 
-    // Obtain the arguments string, split to Vec.
+    // Split the shortcut's argument string honoring quoting (Squirrel/Electron
+    // shortcuts use quoted paths); fall back to whitespace splitting if the
+    // string has unbalanced quotes.
     let args = link
         .arguments()
         .as_ref()
         .map(|s| {
-            s.split_whitespace()
-                .map(str::to_string)
-                .collect::<Vec<String>>()
+            shell_words::split(s)
+                .unwrap_or_else(|_| s.split_whitespace().map(str::to_string).collect())
         })
         .filter(|v| !v.is_empty());
 
