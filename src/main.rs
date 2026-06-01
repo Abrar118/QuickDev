@@ -1,5 +1,6 @@
 mod adapters;
 mod apps;
+mod capture;
 mod cli;
 mod commands;
 mod config;
