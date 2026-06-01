@@ -1,4 +1,5 @@
-use quickdev::apps::discover_apps;
+use quickdev::apps::{discover_apps, discover_apps_unique_by_path};
+use std::collections::HashSet;
 
 #[test]
 fn discover_apps_returns_vec() {
@@ -35,4 +36,23 @@ fn discover_apps_sorted_alphabetically() {
             );
         }
     }
+}
+
+#[test]
+fn discover_apps_unique_by_path_has_no_duplicate_paths() {
+    let apps = discover_apps_unique_by_path();
+    let mut seen = HashSet::new();
+    for (_, path) in &apps {
+        assert!(
+            seen.insert(path),
+            "duplicate path in path-unique list: {path}"
+        );
+    }
+}
+
+#[test]
+fn discover_apps_unique_by_path_is_superset_of_discover_apps() {
+    // Name-dedup keeps a subset of the path-unique list, so the path-unique
+    // list must be at least as large.
+    assert!(discover_apps_unique_by_path().len() >= discover_apps().len());
 }

@@ -1,5 +1,6 @@
 pub mod adapters;
 pub mod apps;
+pub mod capture;
 pub mod config;
 pub mod doctor;
 pub mod fzf;

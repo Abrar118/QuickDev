@@ -88,6 +88,12 @@ pub(crate) enum Commands {
         #[arg(long)]
         fix: bool,
     },
+    /// Capture currently-running apps into this project's .quickdev.toml
+    Capture {
+        /// Add all detected apps without interactive selection
+        #[arg(long)]
+        all: bool,
+    },
 }
 
 #[derive(Subcommand)]
