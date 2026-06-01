@@ -55,7 +55,7 @@ cargo install quickdev
 **npm** (downloads the prebuilt binary; requires network access at install):
 
 ```bash
-npm install -g quickdev
+npm install -g @panda-orion/quickdev
 ```
 
 ### Option 3: Build from Source

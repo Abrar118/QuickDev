@@ -1,17 +1,35 @@
 {
-  "name": "quickdev",
+  "name": "@panda-orion/quickdev",
   "version": "0.2.0",
   "description": "Cross-platform CLI for managing project terminal and app launch configurations",
-  "bin": { "quickdev": "bin/quickdev.js" },
+  "bin": {
+    "quickdev": "bin/quickdev.js"
+  },
   "scripts": {
     "postinstall": "node install.js",
     "test": "node --test"
   },
-  "files": ["bin/", "lib/", "install.js", "README.md"],
-  "engines": { "node": ">=18" },
-  "repository": { "type": "git", "url": "https://github.com/Abrar118/QuickDev.git" },
+  "files": [
+    "bin/",
+    "lib/",
+    "install.js",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Abrar118/QuickDev.git"
+  },
   "homepage": "https://github.com/Abrar118/QuickDev#readme",
-  "keywords": ["cli", "terminal", "launcher", "developer-tools", "productivity"],
+  "keywords": [
+    "cli",
+    "terminal",
+    "launcher",
+    "developer-tools",
+    "productivity"
+  ],
   "license": "MIT",
   "author": "Abrar Mahir Esam"
 }

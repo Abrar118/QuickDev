@@ -24,7 +24,9 @@ npm pack --dry-run
 echo
 read -r -p "Publish quickdev@$version to npm? [y/N] " reply
 if [[ "$reply" == "y" || "$reply" == "Y" ]]; then
-  npm publish
+  # Scoped package (@panda-orion/quickdev) — --access public is required to
+  # publish it publicly (scoped packages default to restricted).
+  npm publish --access public
   echo "==> published quickdev@$version"
 else
   echo "==> aborted (nothing published)"

@@ -4,7 +4,7 @@ Installs the [QuickDev](https://github.com/Abrar118/QuickDev) CLI as a prebuilt
 binary.
 
 ```bash
-npm install -g quickdev
+npm install -g @panda-orion/quickdev
 quickdev --help
 ```
 
@@ -17,5 +17,5 @@ Supported platforms: macOS (x64, arm64), Linux (x64, arm64), Windows (x64).
 On any other platform, install fails with a clear message — download a binary
 directly from the [Releases page](https://github.com/Abrar118/QuickDev/releases).
 
-The package version tracks the QuickDev release it installs (e.g. `quickdev@0.2.0`
-installs release `v0.2.0`).
+The package version tracks the QuickDev release it installs (e.g.
+`@panda-orion/quickdev@0.2.0` installs release `v0.2.0`).
