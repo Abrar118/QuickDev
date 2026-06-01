@@ -8,6 +8,7 @@ use crate::models::AppEntry;
 /// value is launchable (injected so this function stays pure/testable). Only the
 /// `[Desktop Entry]` group is read; later groups (e.g. `[Desktop Action …]`) are
 /// ignored.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn parse_desktop_entry(
     contents: &str,
     try_exec_resolvable: impl Fn(&str) -> bool,
@@ -85,6 +86,7 @@ pub fn combine_app_args(
 /// empty after stripping is dropped. `%%` is preserved as a literal `%` via a
 /// sentinel so it is never mistaken for a field code. The first surviving token
 /// is the executable; the rest are arguments. Pure — no filesystem I/O.
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 pub fn parse_exec(exec: &str) -> (String, Vec<String>) {
     const SENTINEL: char = '\u{0}';
     const FIELD_CODES: [&str; 13] = [
@@ -178,8 +180,64 @@ fn installed_apps() -> Vec<AppEntry> {
         apps
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        let mut dirs: Vec<String> = vec![
+            "/usr/share/applications".to_string(),
+            "/usr/local/share/applications".to_string(),
+            "/var/lib/flatpak/exports/share/applications".to_string(),
+            "/var/lib/snapd/desktop/applications".to_string(),
+        ];
+        if let Some(home) = dirs::home_dir() {
+            dirs.push(format!("{}/.local/share/applications", home.display()));
+        }
+
+        let mut apps: Vec<AppEntry> = Vec::new();
+        for dir in &dirs {
+            let entries = match std::fs::read_dir(dir) {
+                Ok(e) => e,
+                Err(_) => continue,
+            };
+            for entry in entries.flatten() {
+                let path = entry.path();
+                let file_name = entry.file_name().to_string_lossy().to_string();
+                if !file_name.to_lowercase().ends_with(".desktop") {
+                    continue;
+                }
+                let contents = match std::fs::read_to_string(&path) {
+                    Ok(c) => c,
+                    Err(_) => continue,
+                };
+                if let Some(app) = parse_desktop_entry(&contents, try_exec_resolvable) {
+                    apps.push(app);
+                }
+            }
+        }
+        apps.sort_by_key(|a| a.name.to_lowercase());
+        apps
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
     {
         Vec::new()
     }
+}
+
+/// Whether a `.desktop` `TryExec` value points at a launchable binary: an
+/// absolute/relative path that exists, or a bare name found on `$PATH`. Linux
+/// I/O — not unit-tested.
+#[cfg(target_os = "linux")]
+fn try_exec_resolvable(cmd: &str) -> bool {
+    use std::path::Path;
+    if cmd.contains('/') {
+        return Path::new(cmd).exists();
+    }
+    if let Ok(path_var) = std::env::var("PATH") {
+        for dir in path_var.split(':') {
+            if Path::new(dir).join(cmd).exists() {
+                return true;
+            }
+        }
+    }
+    false
 }
