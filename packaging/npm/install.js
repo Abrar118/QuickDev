@@ -10,13 +10,18 @@ const { parseChecksums, sha256 } = require('./lib/verify');
 const REPO = 'Abrar118/QuickDev';
 
 // GET a URL into a Buffer, following GitHub's redirect to the asset CDN.
-function httpsGet(url) {
+// Caps redirect depth and applies a socket timeout so a redirect loop or a
+// stalled connection fails cleanly instead of hanging the install.
+function httpsGet(url, depth = 0) {
+  if (depth > 5) return Promise.reject(new Error(`too many redirects fetching ${url}`));
   return new Promise((resolve, reject) => {
-    https
-      .get(url, { headers: { 'User-Agent': 'quickdev-npm-installer' } }, (res) => {
+    const req = https.get(
+      url,
+      { headers: { 'User-Agent': 'quickdev-npm-installer' }, timeout: 30000 },
+      (res) => {
         if (res.statusCode >= 300 && res.statusCode < 400 && res.headers.location) {
           res.resume();
-          resolve(httpsGet(res.headers.location));
+          resolve(httpsGet(res.headers.location, depth + 1));
           return;
         }
         if (res.statusCode !== 200) {
@@ -28,8 +33,10 @@ function httpsGet(url) {
         res.on('data', (c) => chunks.push(c));
         res.on('end', () => resolve(Buffer.concat(chunks)));
         res.on('error', reject);
-      })
-      .on('error', reject);
+      }
+    );
+    req.on('timeout', () => req.destroy(new Error(`download timed out: ${url}`)));
+    req.on('error', reject);
   });
 }
 
