@@ -1,5 +1,43 @@
-use quickdev::apps::{discover_apps, discover_apps_unique_by_path};
+use quickdev::apps::{discover_apps, discover_apps_unique_by_path, parse_exec};
 use std::collections::HashSet;
+
+#[test]
+fn parse_exec_strips_field_codes() {
+    let (path, args) = parse_exec("code %F");
+    assert_eq!(path, "code");
+    assert!(args.is_empty());
+}
+
+#[test]
+fn parse_exec_keeps_flatpak_args() {
+    let (path, args) = parse_exec("flatpak run com.example.App");
+    assert_eq!(path, "flatpak");
+    assert_eq!(args, vec!["run".to_string(), "com.example.App".to_string()]);
+}
+
+#[test]
+fn parse_exec_preserves_literal_percent() {
+    let (path, args) = parse_exec("foo %% bar");
+    assert_eq!(path, "foo");
+    assert_eq!(args, vec!["%".to_string(), "bar".to_string()]);
+}
+
+#[test]
+fn parse_exec_drops_emptied_token_keeps_flag() {
+    let (path, args) = parse_exec("myapp --flag %U");
+    assert_eq!(path, "myapp");
+    assert_eq!(args, vec!["--flag".to_string()]);
+}
+
+#[test]
+fn parse_exec_handles_quoted_args() {
+    let (path, args) = parse_exec("env \"VAR=a b\" /snap/bin/app");
+    assert_eq!(path, "env");
+    assert_eq!(
+        args,
+        vec!["VAR=a b".to_string(), "/snap/bin/app".to_string()]
+    );
+}
 
 #[test]
 fn discover_apps_returns_vec() {

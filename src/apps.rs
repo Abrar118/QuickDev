@@ -1,3 +1,39 @@
+use crate::models::AppEntry;
+
+/// Clean a Freedesktop `Exec=` value into `(executable, args)`.
+///
+/// Field codes (`%f %F %u %U %i %c %k …`) are stripped; a token that becomes
+/// empty after stripping is dropped. `%%` is preserved as a literal `%` via a
+/// sentinel so it is never mistaken for a field code. The first surviving token
+/// is the executable; the rest are arguments. Pure — no filesystem I/O.
+pub fn parse_exec(exec: &str) -> (String, Vec<String>) {
+    const SENTINEL: char = '\u{0}';
+    const FIELD_CODES: [&str; 13] = [
+        "%f", "%F", "%u", "%U", "%i", "%c", "%k", "%d", "%D", "%n", "%N", "%v", "%m",
+    ];
+
+    let protected = exec.replace("%%", &SENTINEL.to_string());
+    let tokens = shell_words::split(&protected).unwrap_or_default();
+
+    let mut cleaned: Vec<String> = Vec::new();
+    for token in tokens {
+        let mut t = token;
+        for code in FIELD_CODES {
+            t = t.replace(code, "");
+        }
+        let t = t.replace(SENTINEL, "%");
+        if !t.is_empty() {
+            cleaned.push(t);
+        }
+    }
+
+    if cleaned.is_empty() {
+        return (String::new(), Vec::new());
+    }
+    let path = cleaned.remove(0);
+    (path, cleaned)
+}
+
 /// Installed `.app` bundles as `(name, path)`, sorted by name and deduplicated
 /// by name (keeping the first by sort order). Used by the `add` picker, where a
 /// single entry per display name is what the user wants.
