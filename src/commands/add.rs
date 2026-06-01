@@ -89,27 +89,29 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
             println!("Added terminal '{name}'");
         }
         "Application" => {
-            let (app_name, app_path) = pick_application()?;
+            let app = pick_application()?;
 
-            if config.applications.iter().any(|a| a.name == app_name) {
-                return Err(format!("application '{}' already exists", app_name));
+            if config.applications.iter().any(|a| a.name == app.name) {
+                return Err(format!("application '{}' already exists", app.name));
             }
 
             let args_input =
                 prompt("Arguments (e.g., \".\" to open project root, Enter to skip): ")?;
-            let args = if args_input.is_empty() {
+            let user_args = if args_input.is_empty() {
                 None
             } else {
                 Some(parse::parse_shell_args(&args_input)?)
             };
 
+            let args = apps::combine_app_args(app.args, user_args);
+
             config.applications.push(AppEntry {
-                name: app_name.clone(),
-                path: app_path,
+                name: app.name.clone(),
+                path: app.path,
                 args,
             });
             save_project_config(&config_path, &config)?;
-            println!("Added application '{app_name}'");
+            println!("Added application '{}'", app.name);
         }
         _ => return Err("invalid selection".to_string()),
     }
@@ -131,50 +133,51 @@ fn pick_emulator() -> Result<Option<String>, String> {
     }
 }
 
-fn pick_application() -> Result<(String, String), String> {
+fn pick_application() -> Result<AppEntry, String> {
     let discovered = apps::discover_apps();
 
     if discovered.is_empty() {
-        let app_path = prompt("Application path: ")?;
-        if app_path.is_empty() {
-            return Err("path cannot be empty".to_string());
-        }
-        let app_name = prompt("Application name: ")?;
-        if app_name.is_empty() {
-            return Err("name cannot be empty".to_string());
-        }
-        return Ok((app_name, app_path));
+        return manual_app_entry();
     }
 
     let mut items: Vec<String> = vec!["[Enter path manually]".to_string()];
-    for (name, path) in &discovered {
-        items.push(format!("{name}  ({path})"));
+    for app in &discovered {
+        items.push(format!("{}  ({})", app.name, app.path));
     }
 
     let selected = fzf::fzf_select_one(&items, "Select an application:")?;
 
-    if selected == "[Enter path manually]" {
-        let app_path = prompt("Application path: ")?;
-        if app_path.is_empty() {
-            return Err("path cannot be empty".to_string());
-        }
-        let app_name = prompt("Application name: ")?;
-        if app_name.is_empty() {
-            return Err("name cannot be empty".to_string());
-        }
-        return Ok((app_name, app_path));
+    // Map the selection back by its position in the presented list rather than
+    // re-parsing the display text: an app name may itself contain the "  ("
+    // separator, which would corrupt a string-split recovery. `items[0]` is the
+    // manual-entry row; `items[i + 1]` is `discovered[i]`.
+    let index = items
+        .iter()
+        .position(|item| item == &selected)
+        .ok_or_else(|| format!("selection '{selected}' not in the list"))?;
+
+    if index == 0 {
+        return manual_app_entry();
     }
 
-    let app_name = selected
-        .split("  (")
-        .next()
-        .unwrap_or(&selected)
-        .to_string();
+    Ok(discovered
+        .into_iter()
+        .nth(index - 1)
+        .expect("selected index maps to a discovered app"))
+}
 
-    let entry = discovered
-        .iter()
-        .find(|(name, _)| *name == app_name)
-        .ok_or_else(|| format!("app '{}' not found in discovered list", app_name))?;
-
-    Ok((entry.0.clone(), entry.1.clone()))
+fn manual_app_entry() -> Result<AppEntry, String> {
+    let app_path = prompt("Application path: ")?;
+    if app_path.is_empty() {
+        return Err("path cannot be empty".to_string());
+    }
+    let app_name = prompt("Application name: ")?;
+    if app_name.is_empty() {
+        return Err("name cannot be empty".to_string());
+    }
+    Ok(AppEntry {
+        name: app_name,
+        path: app_path,
+        args: None,
+    })
 }

@@ -31,27 +31,53 @@ pub fn launch_command_for_tool(_platform: &str, tool_id: &str) -> Option<&'stati
         .map(|t| t.launch_command)
 }
 
-pub fn infer_tool_id(name: &str, path: &str) -> Option<String> {
-    let name_lower = name.to_lowercase();
+/// Identify a known tool from the launch PATH alone (never the display name).
+///
+/// Used to decide whether to substitute the tool's own CLI at launch time. A
+/// wrapper path like `flatpak` or a Squirrel `Update.exe` must NOT be treated as
+/// the tool just because the app's display name matches — otherwise the CLI gets
+/// invoked with the wrapper's arguments (e.g. a Flatpak VS Code with
+/// `path=flatpak, args=[run, com.visualstudio.code]` would run
+/// `code run com.visualstudio.code`). Matching only on the path keeps such
+/// wrapper entries on the generic launch path, where `flatpak run …` works.
+pub fn infer_tool_id_from_path(path: &str) -> Option<String> {
     let path_lower = path.to_lowercase();
 
-    if name_lower.contains("cursor") || path_lower.contains("cursor") {
+    if path_lower.contains("cursor") {
         return Some("cursor".to_string());
     }
-    if name_lower.contains("vscode")
-        || name_lower == "code"
-        || name_lower == "visual studio code"
-        || path_lower.contains("visual studio code")
+    if path_lower.contains("visual studio code")
         || path_lower.ends_with("/code")
         || path_lower.ends_with("code.app")
         || path_lower.ends_with("code.exe")
     {
         return Some("vscode".to_string());
     }
-    if name_lower.contains("zed") || path_lower.contains("zed") {
+    if path_lower.contains("zed") {
         return Some("zed".to_string());
     }
-    if name_lower.contains("ghostty") || path_lower.contains("ghostty") {
+    if path_lower.contains("ghostty") {
+        return Some("ghostty".to_string());
+    }
+    None
+}
+
+pub fn infer_tool_id(name: &str, path: &str) -> Option<String> {
+    if let Some(tool_id) = infer_tool_id_from_path(path) {
+        return Some(tool_id);
+    }
+
+    let name_lower = name.to_lowercase();
+    if name_lower.contains("cursor") {
+        return Some("cursor".to_string());
+    }
+    if name_lower.contains("vscode") || name_lower == "code" || name_lower == "visual studio code" {
+        return Some("vscode".to_string());
+    }
+    if name_lower.contains("zed") {
+        return Some("zed".to_string());
+    }
+    if name_lower.contains("ghostty") {
         return Some("ghostty".to_string());
     }
     None

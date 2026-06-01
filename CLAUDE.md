@@ -67,4 +67,5 @@ CLI (clap) → config.rs (TOML read/write) → launch.rs (process spawning)
 - snake_case everywhere
 - Short imperative commit messages
 - No async — pure synchronous Rust
-- 34 tests across `tests/` — run `cargo test` before committing
+- 127 tests across `tests/` — run `cargo test` before committing
+- `/docs/` is gitignored (specs, plans live there local-only) — do NOT commit anything under `docs/`

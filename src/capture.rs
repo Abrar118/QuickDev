@@ -11,7 +11,7 @@ pub fn normalize_bundle_path(path: &str) -> &str {
 /// Map running GUI app bundle paths to installed bundles.
 ///
 /// `running_paths` are `.app` POSIX paths from `detect_running_apps`;
-/// `installed` is the `(name, path)` shape from `apps::discover_apps()`.
+/// `installed` is the `(name, path)` shape from `apps::discover_apps_unique_by_path()`.
 /// Matching is by normalized path; the installed bundle's canonical name and
 /// (un-normalized) path are used in the output. Running paths with no installed
 /// bundle are dropped. The result is sorted by name (case-insensitive) and
