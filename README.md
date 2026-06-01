@@ -10,10 +10,12 @@ Every time you start working on a project, you open the same terminals, navigate
 
 - **Terminal tabs** with custom working directories and startup commands
 - **Application launching** with automatic tool detection (VS Code, Cursor, Zed)
+- **Capture running apps** (macOS) into your project config with `quickdev capture`
 - **Interactive mode** with [fzf](https://github.com/junegunn/fzf) for adding, removing, and selectively launching items
-- **Per-project config** stored as a human-readable `.quickdev.toml` in your project root
+- **Per-project config** stored as a human-readable, machine-local `.quickdev.toml` in your project root
 - **Global project index** so you can launch any project from anywhere
 - **Config templates** to clone one project's setup to another
+- **Diagnostics** with `quickdev doctor`, `validate`, and `prune` to keep configs healthy
 - **Cross-platform** support for macOS, Linux, and Windows
 
 ## Installation
@@ -444,7 +446,7 @@ If fzf is not installed, the command errors with a hint to install fzf.
 
 - **Config templates:** Set up one project's config, then use `quickdev init --from my-api` in new projects to get the same terminal/app layout.
 - **Edit directly:** The `.quickdev.toml` file is plain TOML. You can edit it by hand — `quickdev edit` opens it in your editor.
-- **Version control:** Commit `.quickdev.toml` to your repo so teammates can use the same launch config.
+- **Keep it local:** `.quickdev.toml` describes your personal machine (absolute app paths, your preferred emulator), so it's git-ignored by default rather than shared.
 - **Scripting:** All commands work non-interactively when given explicit arguments (e.g. `quickdev launch --all`, `quickdev add terminal dev .`). The `launch` picker activates whenever `--all` is omitted; `add`/`remove` pickers activate when their item arguments are omitted.
 
 ## Building from Source
