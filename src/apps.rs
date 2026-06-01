@@ -63,6 +63,22 @@ pub fn parse_desktop_entry(
     Some(AppEntry { name, path, args })
 }
 
+/// Merge discovered launch args with user-entered args, keeping discovered args
+/// first (they are launch-critical, e.g. `flatpak run app.id` or
+/// `Update.exe --processStart App.exe`). Returns `None` when the result is empty.
+pub fn combine_app_args(
+    discovered: Option<Vec<String>>,
+    user: Option<Vec<String>>,
+) -> Option<Vec<String>> {
+    let mut combined = discovered.unwrap_or_default();
+    combined.extend(user.unwrap_or_default());
+    if combined.is_empty() {
+        None
+    } else {
+        Some(combined)
+    }
+}
+
 /// Clean a Freedesktop `Exec=` value into `(executable, args)`.
 ///
 /// Field codes (`%f %F %u %U %i %c %k …`) are stripped; a token that becomes

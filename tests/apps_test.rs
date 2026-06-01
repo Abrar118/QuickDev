@@ -1,5 +1,5 @@
 use quickdev::apps::{
-    discover_apps, discover_apps_unique_by_path, parse_desktop_entry, parse_exec,
+    combine_app_args, discover_apps, discover_apps_unique_by_path, parse_desktop_entry, parse_exec,
 };
 use std::collections::HashSet;
 
@@ -162,4 +162,37 @@ fn parse_desktop_entry_ignores_other_groups() {
     let e = parse_desktop_entry(c, |_| true).unwrap();
     assert_eq!(e.name, "Main");
     assert_eq!(e.path, "main");
+}
+
+#[test]
+fn combine_app_args_none_none() {
+    assert_eq!(combine_app_args(None, None), None);
+}
+
+#[test]
+fn combine_app_args_discovered_only() {
+    assert_eq!(
+        combine_app_args(Some(vec!["run".to_string()]), None),
+        Some(vec!["run".to_string()])
+    );
+}
+
+#[test]
+fn combine_app_args_user_only() {
+    assert_eq!(
+        combine_app_args(None, Some(vec![".".to_string()])),
+        Some(vec![".".to_string()])
+    );
+}
+
+#[test]
+fn combine_app_args_appends_user_after_discovered() {
+    let got = combine_app_args(
+        Some(vec!["run".to_string(), "app".to_string()]),
+        Some(vec![".".to_string()]),
+    );
+    assert_eq!(
+        got,
+        Some(vec!["run".to_string(), "app".to_string(), ".".to_string()])
+    );
 }
