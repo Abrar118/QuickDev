@@ -147,20 +147,23 @@ fn pick_application() -> Result<AppEntry, String> {
 
     let selected = fzf::fzf_select_one(&items, "Select an application:")?;
 
-    if selected == "[Enter path manually]" {
+    // Map the selection back by its position in the presented list rather than
+    // re-parsing the display text: an app name may itself contain the "  ("
+    // separator, which would corrupt a string-split recovery. `items[0]` is the
+    // manual-entry row; `items[i + 1]` is `discovered[i]`.
+    let index = items
+        .iter()
+        .position(|item| item == &selected)
+        .ok_or_else(|| format!("selection '{selected}' not in the list"))?;
+
+    if index == 0 {
         return manual_app_entry();
     }
 
-    let app_name = selected
-        .split("  (")
-        .next()
-        .unwrap_or(&selected)
-        .to_string();
-
-    discovered
+    Ok(discovered
         .into_iter()
-        .find(|a| a.name == app_name)
-        .ok_or_else(|| format!("app '{}' not found in discovered list", app_name))
+        .nth(index - 1)
+        .expect("selected index maps to a discovered app"))
 }
 
 fn manual_app_entry() -> Result<AppEntry, String> {

@@ -1,5 +1,6 @@
 use crate::adapters::{
-    command_exists, infer_tool_id, is_editor_tool, launch_command_for_tool, resolve_command,
+    command_exists, infer_tool_id, infer_tool_id_from_path, is_editor_tool,
+    launch_command_for_tool, resolve_command,
 };
 use crate::models::ProjectConfig;
 use std::path::Path;
@@ -285,7 +286,7 @@ pub fn launch_project(
             .map(|a| resolve_app_args(a, &placeholder_ctx));
         let effective_args =
             effective_app_args(&app.name, &app.path, resolved_args.as_deref(), &root_str);
-        let result = launch_application(&app.name, &app.path, effective_args.as_deref());
+        let result = launch_application(&app.path, effective_args.as_deref());
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
@@ -620,10 +621,15 @@ pub fn effective_app_args(
     }
 }
 
-fn launch_application(name: &str, path: &str, args: Option<&[String]>) -> Result<(), String> {
+fn launch_application(path: &str, args: Option<&[String]>) -> Result<(), String> {
     let normalized_path = normalize_path(path);
 
-    let tool_id = infer_tool_id(name, &normalized_path);
+    // Use path-only inference here: substituting the tool's CLI is only safe
+    // when the configured path IS that tool. Wrapper paths (flatpak, Snap,
+    // Squirrel Update.exe) whose display name merely matches must fall through
+    // to the generic launch so their saved args (e.g. `flatpak run app.id`) run
+    // against the wrapper, not against the CLI.
+    let tool_id = infer_tool_id_from_path(&normalized_path);
 
     if let Some(ref tid) = tool_id {
         if let Some(cli) = launch_command_for_tool(std::env::consts::OS, tid) {

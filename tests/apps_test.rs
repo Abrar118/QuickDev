@@ -58,13 +58,6 @@ fn discover_apps_unique_by_path_has_no_duplicate_paths() {
 }
 
 #[test]
-fn discover_apps_unique_by_path_is_superset_of_discover_apps() {
-    // Name-dedup keeps a subset of the path-unique list, so the path-unique
-    // list must be at least as large.
-    assert!(discover_apps_unique_by_path().len() >= discover_apps().len());
-}
-
-#[test]
 fn parse_exec_strips_field_codes() {
     let (path, args) = parse_exec("code %F");
     assert_eq!(path, "code");

@@ -125,14 +125,18 @@ pub fn discover_apps() -> Vec<AppEntry> {
     apps
 }
 
-/// Installed applications as `(name, path)`, sorted by name, unique by path (NO
-/// name deduplication). `capture` matches running apps by path, so it must see
-/// every path even when two directories hold a same-named app — name dedup would
-/// otherwise hide one and capture would silently drop a running app.
+/// Installed applications as `(name, path)`, sorted by name, deduplicated by
+/// path (NO name deduplication). `capture` matches running apps by path, so it
+/// must see every distinct path even when two directories hold a same-named app
+/// — name dedup would otherwise hide one and capture would silently drop a
+/// running app. Two `.desktop`/`.lnk` entries pointing at the same executable
+/// collapse to one (the first by sort order).
 pub fn discover_apps_unique_by_path() -> Vec<(String, String)> {
+    let mut seen = std::collections::HashSet::new();
     installed_apps()
         .into_iter()
         .map(|a| (a.name, a.path))
+        .filter(|(_, path)| seen.insert(path.clone()))
         .collect()
 }
 
@@ -292,6 +296,12 @@ fn resolve_lnk(path: &std::path::Path) -> Option<AppEntry> {
     // Split the shortcut's argument string honoring quoting (Squirrel/Electron
     // shortcuts use quoted paths); fall back to whitespace splitting if the
     // string has unbalanced quotes.
+    //
+    // LIMITATION: shell_words uses POSIX tokenization, but a `.lnk` argument
+    // string follows Windows command-line quoting rules (different backslash /
+    // quote semantics). This is strictly better than naive whitespace splitting
+    // and correct for common/unquoted args, but it is not a faithful Windows
+    // command-line parser. TODO: use a Windows-accurate tokenizer if needed.
     let args = link
         .arguments()
         .as_ref()
