@@ -1,5 +1,68 @@
 use crate::models::AppEntry;
 
+/// Parse the `[Desktop Entry]` group of a `.desktop` file into an `AppEntry`.
+///
+/// Returns `None` for entries the OS launcher would hide: `Type != Application`,
+/// `NoDisplay=true`, `Hidden=true`, missing `Name`/`Exec`, or a present but
+/// unresolvable `TryExec`. `try_exec_resolvable` decides whether a `TryExec`
+/// value is launchable (injected so this function stays pure/testable). Only the
+/// `[Desktop Entry]` group is read; later groups (e.g. `[Desktop Action …]`) are
+/// ignored.
+pub fn parse_desktop_entry(
+    contents: &str,
+    try_exec_resolvable: impl Fn(&str) -> bool,
+) -> Option<AppEntry> {
+    let mut in_group = false;
+    let mut type_ = None;
+    let mut name = None;
+    let mut exec = None;
+    let mut try_exec = None;
+    let mut no_display = false;
+    let mut hidden = false;
+
+    for line in contents.lines() {
+        let line = line.trim();
+        if line.starts_with('[') && line.ends_with(']') {
+            in_group = line == "[Desktop Entry]";
+            continue;
+        }
+        if !in_group {
+            continue;
+        }
+        if let Some((key, value)) = line.split_once('=') {
+            let key = key.trim();
+            let value = value.trim();
+            match key {
+                "Type" => type_ = Some(value.to_string()),
+                "Name" if name.is_none() => name = Some(value.to_string()),
+                "Exec" => exec = Some(value.to_string()),
+                "TryExec" => try_exec = Some(value.to_string()),
+                "NoDisplay" => no_display = value == "true",
+                "Hidden" => hidden = value == "true",
+                _ => {}
+            }
+        }
+    }
+
+    if type_.as_deref() != Some("Application") || no_display || hidden {
+        return None;
+    }
+    if let Some(te) = &try_exec {
+        if !try_exec_resolvable(te) {
+            return None;
+        }
+    }
+
+    let name = name.filter(|n| !n.is_empty())?;
+    let exec = exec.filter(|e| !e.is_empty())?;
+    let (path, args) = parse_exec(&exec);
+    if path.is_empty() {
+        return None;
+    }
+    let args = if args.is_empty() { None } else { Some(args) };
+    Some(AppEntry { name, path, args })
+}
+
 /// Clean a Freedesktop `Exec=` value into `(executable, args)`.
 ///
 /// Field codes (`%f %F %u %U %i %c %k …`) are stripped; a token that becomes

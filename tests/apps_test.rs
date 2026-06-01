@@ -1,4 +1,6 @@
-use quickdev::apps::{discover_apps, discover_apps_unique_by_path, parse_exec};
+use quickdev::apps::{
+    discover_apps, discover_apps_unique_by_path, parse_desktop_entry, parse_exec,
+};
 use std::collections::HashSet;
 
 #[test]
@@ -100,4 +102,64 @@ fn discover_apps_unique_by_path_is_superset_of_discover_apps() {
     // Name-dedup keeps a subset of the path-unique list, so the path-unique
     // list must be at least as large.
     assert!(discover_apps_unique_by_path().len() >= discover_apps().len());
+}
+
+#[test]
+fn parse_desktop_entry_valid() {
+    let c = "[Desktop Entry]\nType=Application\nName=Cursor\nExec=cursor %F\n";
+    let e = parse_desktop_entry(c, |_| true).expect("should parse");
+    assert_eq!(e.name, "Cursor");
+    assert_eq!(e.path, "cursor");
+    assert!(e.args.is_none());
+}
+
+#[test]
+fn parse_desktop_entry_nodisplay_skipped() {
+    let c = "[Desktop Entry]\nType=Application\nName=X\nExec=x\nNoDisplay=true\n";
+    assert!(parse_desktop_entry(c, |_| true).is_none());
+}
+
+#[test]
+fn parse_desktop_entry_hidden_skipped() {
+    let c = "[Desktop Entry]\nType=Application\nName=X\nExec=x\nHidden=true\n";
+    assert!(parse_desktop_entry(c, |_| true).is_none());
+}
+
+#[test]
+fn parse_desktop_entry_non_application_skipped() {
+    let c = "[Desktop Entry]\nType=Directory\nName=X\nExec=x\n";
+    assert!(parse_desktop_entry(c, |_| true).is_none());
+}
+
+#[test]
+fn parse_desktop_entry_missing_name_or_exec() {
+    let no_name = "[Desktop Entry]\nType=Application\nExec=x\n";
+    assert!(parse_desktop_entry(no_name, |_| true).is_none());
+    let no_exec = "[Desktop Entry]\nType=Application\nName=X\n";
+    assert!(parse_desktop_entry(no_exec, |_| true).is_none());
+}
+
+#[test]
+fn parse_desktop_entry_tryexec_unresolvable_skipped() {
+    let c = "[Desktop Entry]\nType=Application\nName=X\nExec=x\nTryExec=/nope/x\n";
+    assert!(parse_desktop_entry(c, |_| false).is_none());
+}
+
+#[test]
+fn parse_desktop_entry_keeps_flatpak_args() {
+    let c = "[Desktop Entry]\nType=Application\nName=App\nExec=flatpak run com.example.App %U\n";
+    let e = parse_desktop_entry(c, |_| true).unwrap();
+    assert_eq!(e.path, "flatpak");
+    assert_eq!(
+        e.args.unwrap(),
+        vec!["run".to_string(), "com.example.App".to_string()]
+    );
+}
+
+#[test]
+fn parse_desktop_entry_ignores_other_groups() {
+    let c = "[Desktop Entry]\nType=Application\nName=Main\nExec=main\n[Desktop Action New]\nName=New\nExec=other\n";
+    let e = parse_desktop_entry(c, |_| true).unwrap();
+    assert_eq!(e.name, "Main");
+    assert_eq!(e.path, "main");
 }
