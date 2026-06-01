@@ -12,16 +12,15 @@ pub fn parse_exec(exec: &str) -> (String, Vec<String>) {
         "%f", "%F", "%u", "%U", "%i", "%c", "%k", "%d", "%D", "%n", "%N", "%v", "%m",
     ];
 
-    let protected = exec.replace("%%", &SENTINEL.to_string());
+    let protected = exec.replace("%%", "\u{0}");
     let tokens = shell_words::split(&protected).unwrap_or_default();
 
     let mut cleaned: Vec<String> = Vec::new();
     for token in tokens {
-        let mut t = token;
-        for code in FIELD_CODES {
-            t = t.replace(code, "");
+        if FIELD_CODES.contains(&token.as_str()) {
+            continue;
         }
-        let t = t.replace(SENTINEL, "%");
+        let t = token.replace(SENTINEL, "%");
         if !t.is_empty() {
             cleaned.push(t);
         }

@@ -40,6 +40,13 @@ fn parse_exec_handles_quoted_args() {
 }
 
 #[test]
+fn parse_exec_keeps_embedded_percent_token() {
+    let (path, args) = parse_exec("app http://x/%foo");
+    assert_eq!(path, "app");
+    assert_eq!(args, vec!["http://x/%foo".to_string()]);
+}
+
+#[test]
 fn discover_apps_returns_vec() {
     let apps = discover_apps();
     if cfg!(target_os = "macos") {
