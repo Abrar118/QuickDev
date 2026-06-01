@@ -475,4 +475,4 @@ cargo clippy                     # Lint
 
 ## License
 
-MIT
+Licensed under the [MIT License](LICENSE).
