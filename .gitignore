@@ -4,3 +4,5 @@
 /docs/
 /.claude/
 .quickdev.toml
+AGENTS.md
+CLAUDE.md
