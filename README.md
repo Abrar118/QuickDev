@@ -1,5 +1,10 @@
 # QuickDev
 
+[![crates.io](https://img.shields.io/crates/v/quickdev?logo=rust)](https://crates.io/crates/quickdev)
+[![npm](https://img.shields.io/npm/v/@panda-orion/quickdev?logo=npm)](https://www.npmjs.com/package/@panda-orion/quickdev)
+[![release](https://img.shields.io/github/v/release/Abrar118/QuickDev)](https://github.com/Abrar118/QuickDev/releases)
+[![license](https://img.shields.io/github/license/Abrar118/QuickDev)](LICENSE)
+
 A cross-platform CLI tool that saves and launches your project's terminal tabs and applications with a single command. Define your terminal layout and apps per project, then `quickdev launch` opens everything at once.
 
 ## Why QuickDev?
