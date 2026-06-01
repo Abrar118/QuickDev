@@ -54,3 +54,47 @@ pub fn merge_apps(existing: &[AppEntry], captured: &[AppEntry]) -> Vec<AppEntry>
         .cloned()
         .collect()
 }
+
+/// Bundle POSIX paths of currently-running foreground (GUI) applications.
+///
+/// macOS only; returns `Ok(empty)` elsewhere. Returns `Err` with the osascript
+/// stderr when osascript fails (e.g. Automation/Accessibility permission
+/// denied), so a permission failure is not mistaken for "nothing running".
+/// Isolated I/O — not unit-tested.
+pub fn detect_running_apps() -> Result<Vec<String>, String> {
+    #[cfg(target_os = "macos")]
+    {
+        use std::process::Command;
+        let output = Command::new("osascript")
+            .args([
+                "-e",
+                "set text item delimiters to linefeed",
+                "-e",
+                "tell application \"System Events\" to get (POSIX path of (application file of every process whose background only is false)) as text",
+            ])
+            .output()
+            .map_err(|e| format!("failed to run osascript: {e}"))?;
+        if !output.status.success() {
+            let stderr = String::from_utf8_lossy(&output.stderr);
+            let detail = stderr.trim();
+            let detail = if detail.is_empty() {
+                "osascript failed (is Automation/Accessibility permission granted?)"
+            } else {
+                detail
+            };
+            return Err(format!("could not list running apps: {detail}"));
+        }
+        let stdout = String::from_utf8_lossy(&output.stdout);
+        Ok(stdout
+            .lines()
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .map(str::to_string)
+            .collect())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        Ok(Vec::new())
+    }
+}
