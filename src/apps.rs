@@ -217,10 +217,92 @@ fn installed_apps() -> Vec<AppEntry> {
         apps
     }
 
-    #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+    #[cfg(target_os = "windows")]
+    {
+        let mut dirs: Vec<String> = Vec::new();
+        if let Ok(program_data) = std::env::var("ProgramData") {
+            dirs.push(format!(
+                "{program_data}\\Microsoft\\Windows\\Start Menu\\Programs"
+            ));
+        }
+        if let Ok(app_data) = std::env::var("AppData") {
+            dirs.push(format!(
+                "{app_data}\\Microsoft\\Windows\\Start Menu\\Programs"
+            ));
+        }
+
+        let mut apps: Vec<AppEntry> = Vec::new();
+        for dir in &dirs {
+            collect_lnk_apps(std::path::Path::new(dir), &mut apps);
+        }
+        apps.sort_by_key(|a| a.name.to_lowercase());
+        apps
+    }
+
+    #[cfg(not(any(target_os = "macos", target_os = "linux", target_os = "windows")))]
     {
         Vec::new()
     }
+}
+
+/// Recursively collect Start Menu `.lnk` shortcuts under `dir` whose target is
+/// an `.exe`. Windows I/O — not unit-tested.
+#[cfg(target_os = "windows")]
+fn collect_lnk_apps(dir: &std::path::Path, out: &mut Vec<AppEntry>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.is_dir() {
+            collect_lnk_apps(&path, out);
+            continue;
+        }
+        let file_name = entry.file_name().to_string_lossy().to_string();
+        if !file_name.to_lowercase().ends_with(".lnk") {
+            continue;
+        }
+        if let Some(app) = resolve_lnk(&path) {
+            out.push(app);
+        }
+    }
+}
+
+/// Resolve a `.lnk` shortcut into an `AppEntry`, keeping only `.exe` targets and
+/// carrying the shortcut's arguments. Windows/crate I/O — not unit-tested.
+#[cfg(target_os = "windows")]
+fn resolve_lnk(path: &std::path::Path) -> Option<AppEntry> {
+    let link = lnk::ShellLink::open(path).ok()?;
+
+    // Obtain the absolute target .exe path via LinkInfo.
+    let target = link
+        .link_info()
+        .as_ref()
+        .and_then(|li| li.local_base_path().clone())?;
+
+    if !target.to_lowercase().ends_with(".exe") {
+        return None;
+    }
+
+    let name = path.file_stem()?.to_string_lossy().to_string();
+
+    // Obtain the arguments string, split to Vec.
+    let args = link
+        .arguments()
+        .as_ref()
+        .map(|s| {
+            s.split_whitespace()
+                .map(str::to_string)
+                .collect::<Vec<String>>()
+        })
+        .filter(|v| !v.is_empty());
+
+    Some(AppEntry {
+        name,
+        path: target,
+        args,
+    })
 }
 
 /// Whether a `.desktop` `TryExec` value points at a launchable binary: an
