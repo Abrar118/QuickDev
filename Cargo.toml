@@ -9,6 +9,8 @@ readme = "README.md"
 keywords = ["cli", "terminal", "launcher", "developer-tools", "productivity"]
 categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.85"
+# Release/packaging tooling — not part of the published source crate.
+exclude = ["packaging/", ".github/"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
