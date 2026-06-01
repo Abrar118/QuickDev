@@ -35,7 +35,7 @@ pub struct TerminalEntry {
     pub emulator: Option<String>,
 }
 
-#[derive(Debug, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct AppEntry {
     pub name: String,
     pub path: String,
