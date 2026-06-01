@@ -60,7 +60,7 @@ npm install -g quickdev
 
 ### Option 3: Build from Source
 
-Requires [Rust](https://rustup.rs/) 1.70+.
+Requires [Rust](https://rustup.rs/) 1.85+.
 
 ```bash
 git clone https://github.com/Abrar118/QuickDev.git
