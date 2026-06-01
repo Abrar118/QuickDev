@@ -4,7 +4,10 @@ use quickdev::models::AppEntry;
 fn installed() -> Vec<(String, String)> {
     vec![
         ("Cursor".to_string(), "/Applications/Cursor.app".to_string()),
-        ("Firefox".to_string(), "/Applications/Firefox.app".to_string()),
+        (
+            "Firefox".to_string(),
+            "/Applications/Firefox.app".to_string(),
+        ),
         ("Slack".to_string(), "/Applications/Slack.app".to_string()),
     ]
 }
@@ -72,6 +75,12 @@ fn detected_to_apps_empty_running_is_empty() {
 #[test]
 fn normalize_bundle_path_strips_single_trailing_slash() {
     use quickdev::capture::normalize_bundle_path;
-    assert_eq!(normalize_bundle_path("/Applications/Cursor.app/"), "/Applications/Cursor.app");
-    assert_eq!(normalize_bundle_path("/Applications/Cursor.app"), "/Applications/Cursor.app");
+    assert_eq!(
+        normalize_bundle_path("/Applications/Cursor.app/"),
+        "/Applications/Cursor.app"
+    );
+    assert_eq!(
+        normalize_bundle_path("/Applications/Cursor.app"),
+        "/Applications/Cursor.app"
+    );
 }
