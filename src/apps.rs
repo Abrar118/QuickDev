@@ -112,31 +112,34 @@ pub fn parse_exec(exec: &str) -> (String, Vec<String>) {
     (path, cleaned)
 }
 
-/// Installed `.app` bundles as `(name, path)`, sorted by name and deduplicated
-/// by name (keeping the first by sort order). Used by the `add` picker, where a
-/// single entry per display name is what the user wants.
-pub fn discover_apps() -> Vec<(String, String)> {
-    let mut apps = installed_app_bundles();
-    apps.dedup_by(|a, b| a.0 == b.0);
+/// Installed applications as `AppEntry`, sorted by name (case-insensitive) and
+/// deduplicated by name (keeping the first by sort order). Used by the `add`
+/// picker, where a single entry per display name is what the user wants.
+pub fn discover_apps() -> Vec<AppEntry> {
+    let mut apps = installed_apps();
+    apps.dedup_by(|a, b| a.name.eq_ignore_ascii_case(&b.name));
     apps
 }
 
-/// Installed `.app` bundles as `(name, path)`, sorted by name, unique by path
-/// (NO name deduplication). `capture` matches running apps by path, so it must
-/// see every bundle path even when `/Applications` and `~/Applications` hold a
-/// same-named app — `discover_apps`'s name dedup would otherwise hide one of
-/// them and capture would silently drop a running app installed there.
+/// Installed applications as `(name, path)`, sorted by name, unique by path (NO
+/// name deduplication). `capture` matches running apps by path, so it must see
+/// every path even when two directories hold a same-named app — name dedup would
+/// otherwise hide one and capture would silently drop a running app.
 pub fn discover_apps_unique_by_path() -> Vec<(String, String)> {
-    installed_app_bundles()
+    installed_apps()
+        .into_iter()
+        .map(|a| (a.name, a.path))
+        .collect()
 }
 
-/// Scan `/Applications` and `~/Applications` for `.app` bundles, returning
-/// `(name, path)` sorted by name. Bundle paths are inherently unique, so no
-/// deduplication is applied here; callers dedup by name if they need to.
-fn installed_app_bundles() -> Vec<(String, String)> {
+/// Discover installed applications for the current platform, sorted by name
+/// (case-insensitive). macOS scans `.app` bundles; Linux parses `.desktop`
+/// files; Windows resolves Start Menu `.lnk` shortcuts. Other platforms return
+/// an empty list. macOS entries always have `args: None`.
+fn installed_apps() -> Vec<AppEntry> {
     #[cfg(target_os = "macos")]
     {
-        let mut apps = Vec::new();
+        let mut apps: Vec<AppEntry> = Vec::new();
 
         let dirs_to_scan = vec![
             "/Applications".to_string(),
@@ -161,13 +164,17 @@ fn installed_app_bundles() -> Vec<(String, String)> {
                             .strip_suffix(".app")
                             .unwrap_or(&file_name)
                             .to_string();
-                        apps.push((name, path.to_string_lossy().to_string()));
+                        apps.push(AppEntry {
+                            name,
+                            path: path.to_string_lossy().to_string(),
+                            args: None,
+                        });
                     }
                 }
             }
         }
 
-        apps.sort_by_key(|a| a.0.to_lowercase());
+        apps.sort_by_key(|a| a.name.to_lowercase());
         apps
     }
 
