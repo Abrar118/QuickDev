@@ -6,9 +6,12 @@ mod commands;
 mod config;
 mod doctor;
 mod fzf;
+mod ghostty_applescript;
 mod launch;
 mod models;
 mod parse;
+mod tab_strategy;
+mod terminal_app;
 mod validate;
 
 use clap::Parser;

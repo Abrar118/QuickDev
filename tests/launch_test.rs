@@ -1,3 +1,4 @@
+use quickdev::ghostty_applescript::{build_script, ResolvedTerminal};
 #[cfg(not(target_os = "windows"))]
 use quickdev::launch::pgrep_args_for_process;
 use quickdev::launch::{
@@ -5,45 +6,80 @@ use quickdev::launch::{
     escape_powershell_single_quotes, normalize_path, poll_until, resolve_app_args,
     resolve_terminal_path, PlaceholderContext,
 };
+use quickdev::tab_strategy::{select_tab_strategy, TabCapabilities, TabStrategy};
+use quickdev::terminal_app::{
+    build_auto_tab_script, build_terminal_command, parse_tabbing_preference, TabbingPreference,
+};
 use std::path::Path;
 
 #[test]
-fn watch_process_prefers_ghostty_when_available() {
-    assert_eq!(emulator_watch_process(None, true, "macos"), Some("ghostty"));
-    assert_eq!(emulator_watch_process(None, true, "linux"), Some("ghostty"));
+fn watch_process_prefers_ghostty_only_on_macos_for_unspecified_emulator() {
+    // None + ghostty installed: macOS attempts Ghostty first, so we watch it.
+    assert_eq!(
+        emulator_watch_process(None, true, false, "macos"),
+        Some("ghostty")
+    );
+    // Linux never auto-launches Ghostty for an unspecified emulator
+    // (try_ghostty is macOS-gated), so we watch the native terminal even when
+    // the ghostty binary is present — and honor the ptyxis preference.
+    assert_eq!(
+        emulator_watch_process(None, true, false, "linux"),
+        Some("gnome-terminal-server")
+    );
+    assert_eq!(
+        emulator_watch_process(None, true, true, "linux"),
+        Some("ptyxis")
+    );
 }
 
 #[test]
 fn watch_process_falls_back_to_native_when_no_ghostty() {
     assert_eq!(
-        emulator_watch_process(None, false, "macos"),
+        emulator_watch_process(None, false, false, "macos"),
         Some("Terminal")
     );
     assert_eq!(
-        emulator_watch_process(None, false, "linux"),
+        emulator_watch_process(None, false, false, "linux"),
         Some("gnome-terminal-server")
     );
     assert_eq!(
-        emulator_watch_process(None, false, "windows"),
+        emulator_watch_process(None, false, false, "windows"),
         Some("WindowsTerminal.exe")
     );
 }
 
 #[test]
-fn watch_process_honors_explicit_emulator() {
+fn watch_process_prefers_ptyxis_on_linux_when_available() {
     assert_eq!(
-        emulator_watch_process(Some("ghostty"), false, "linux"),
+        emulator_watch_process(None, false, true, "linux"),
+        Some("ptyxis")
+    );
+}
+
+#[test]
+fn watch_process_honors_explicit_emulator() {
+    // Explicit ghostty is watched on every platform (not cfg-gated).
+    assert_eq!(
+        emulator_watch_process(Some("ghostty"), false, false, "linux"),
         Some("ghostty")
     );
     assert_eq!(
-        emulator_watch_process(Some("terminal"), false, "macos"),
+        emulator_watch_process(Some("terminal"), false, false, "macos"),
         Some("Terminal")
+    );
+    // Explicit terminal on Linux honors the ptyxis preference too.
+    assert_eq!(
+        emulator_watch_process(Some("terminal"), false, true, "linux"),
+        Some("ptyxis")
     );
 }
 
 #[test]
 fn watch_process_unknown_emulator_is_none() {
-    assert_eq!(emulator_watch_process(Some("kitty"), true, "linux"), None);
+    assert_eq!(
+        emulator_watch_process(Some("kitty"), true, false, "linux"),
+        None
+    );
 }
 
 #[test]
@@ -399,4 +435,174 @@ fn effective_app_args_defaults_editor_fallback_to_project_root() {
         effective_app_args("Cursor", "/Applications/Cursor.app", None, "/project"),
         Some(vec!["/project".to_string()])
     );
+}
+
+#[test]
+fn tab_strategy_selects_macos_ghostty_applescript_when_supported() {
+    let caps = TabCapabilities {
+        ghostty_available: true,
+        ghostty_version: Some("1.3.0".to_string()),
+        ghostty_applescript: true,
+        ptyxis_available: false,
+        gnome_terminal_available: false,
+        wt_available: false,
+    };
+
+    assert_eq!(
+        select_tab_strategy("macos", Some("ghostty"), &caps),
+        TabStrategy::AppleScriptTab
+    );
+    // An unspecified emulator resolves to Ghostty AppleScript too.
+    assert_eq!(
+        select_tab_strategy("macos", None, &caps),
+        TabStrategy::AppleScriptTab
+    );
+}
+
+#[test]
+fn tab_strategy_rejects_macos_ghostty_without_applescript_support() {
+    let caps = TabCapabilities {
+        ghostty_available: true,
+        ghostty_version: Some("1.2.0".to_string()),
+        ghostty_applescript: true,
+        ptyxis_available: false,
+        gnome_terminal_available: false,
+        wt_available: false,
+    };
+
+    assert_eq!(
+        select_tab_strategy("macos", Some("ghostty"), &caps),
+        TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn tab_strategy_macos_none_keeps_ghostty_windows_when_applescript_unsupported() {
+    // Ghostty installed but AppleScript unusable: must stay WindowOnly so the
+    // fallback loop opens Ghostty CLI windows, not silently switch to
+    // Terminal.app tabs. Covers both the old-version and disabled cases.
+    let old_version = TabCapabilities {
+        ghostty_available: true,
+        ghostty_version: Some("1.2.0".to_string()),
+        ghostty_applescript: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("macos", None, &old_version),
+        TabStrategy::WindowOnly
+    );
+
+    let applescript_off = TabCapabilities {
+        ghostty_available: true,
+        ghostty_version: Some("1.3.1".to_string()),
+        ghostty_applescript: false,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("macos", None, &applescript_off),
+        TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn tab_strategy_macos_none_uses_terminal_app_only_without_ghostty() {
+    let caps = TabCapabilities {
+        ghostty_available: false,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("macos", None, &caps),
+        TabStrategy::TerminalAppTab
+    );
+}
+
+#[test]
+fn tab_strategy_prefers_linux_ptyxis_cli_tabs() {
+    let caps = TabCapabilities {
+        ghostty_available: false,
+        ghostty_version: None,
+        ghostty_applescript: false,
+        ptyxis_available: true,
+        gnome_terminal_available: true,
+        wt_available: false,
+    };
+
+    assert_eq!(
+        select_tab_strategy("linux", None, &caps),
+        TabStrategy::CliTab
+    );
+}
+
+#[test]
+fn ghostty_applescript_builds_window_then_tabs_with_configuration() {
+    let script = build_script(&[
+        ResolvedTerminal {
+            cwd: "/Users/me/project",
+            command: Some("npm run dev"),
+        },
+        ResolvedTerminal {
+            cwd: "/Users/me/project/logs",
+            command: None,
+        },
+    ])
+    .unwrap();
+
+    assert!(script.contains("tell application \"Ghostty\""));
+    assert!(script.contains("set w to new window with configuration c0"));
+    assert!(script.contains("new tab in w with configuration c1"));
+    assert!(script.contains("initial working directory:\"/Users/me/project\""));
+    assert!(script.contains("command:\"npm run dev\""));
+    assert!(script.contains("wait after command:true"));
+}
+
+#[test]
+fn ghostty_applescript_escapes_paths_and_commands() {
+    let script = build_script(&[ResolvedTerminal {
+        cwd: r#"/Users/me/Quote "Project"/a\b"#,
+        command: Some(r#"printf "ok\done""#),
+    }])
+    .unwrap();
+
+    assert!(script.contains(r#"Quote \"Project\"/a\\b"#));
+    assert!(script.contains(r#"printf \"ok\\done\""#));
+}
+
+#[test]
+fn terminal_app_command_quotes_working_directory() {
+    assert_eq!(
+        build_terminal_command("/Users/me/O'Reilly", Some("npm test")),
+        "cd '/Users/me/O'\\''Reilly' && npm test"
+    );
+}
+
+#[test]
+fn terminal_app_auto_tab_script_uses_plain_do_script_calls() {
+    let script = build_auto_tab_script(&[
+        ResolvedTerminal {
+            cwd: "/Users/me/project",
+            command: Some("npm run dev"),
+        },
+        ResolvedTerminal {
+            cwd: "/Users/me/project/logs",
+            command: None,
+        },
+    ]);
+
+    assert!(script.contains("tell application \"Terminal\""));
+    assert!(script.contains("do script \"cd '/Users/me/project' && npm run dev\""));
+    assert!(script.contains("do script \"cd '/Users/me/project/logs'\""));
+    assert!(!script.contains("System Events"));
+}
+
+#[test]
+fn terminal_app_tabbing_preference_parses_always() {
+    assert_eq!(
+        parse_tabbing_preference("always\n"),
+        Some(TabbingPreference::Always)
+    );
+    assert_eq!(
+        parse_tabbing_preference("fullscreen"),
+        Some(TabbingPreference::Fullscreen)
+    );
+    assert_eq!(parse_tabbing_preference(""), None);
 }

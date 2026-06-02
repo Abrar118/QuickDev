@@ -41,6 +41,7 @@ fn save_and_load_global_config() {
 
     let config = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![GlobalProjectEntry {
             name: "proj-a".to_string(),
             path: "/tmp/proj-a".to_string(),
@@ -95,6 +96,7 @@ fn find_project_config_returns_error_if_not_found() {
 fn unique_project_name_appends_suffix() {
     let config = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![
             GlobalProjectEntry {
                 name: "my-app".to_string(),
@@ -235,6 +237,7 @@ fn renamed_project_config_persists() {
     // Global already has "api" -> init must pick a unique name.
     let global = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![GlobalProjectEntry {
             name: "api".to_string(),
             path: "/tmp/other".to_string(),
@@ -268,6 +271,7 @@ fn register_existing_project_config_syncs_local_name_and_global_index() {
 
     let mut global = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![GlobalProjectEntry {
             name: "api".to_string(),
             path: "/tmp/other".to_string(),
@@ -298,6 +302,7 @@ fn save_global_config_adds_comment_header() {
 
     let config = GlobalConfig {
         emulator: Some("ghostty".to_string()),
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![],
     };
 
@@ -324,6 +329,7 @@ fn set_get_unset_global_emulator() {
     use quickdev::config::{get_global_setting, set_global_setting, unset_global_setting};
     let mut config = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![],
     };
     set_global_setting(&mut config, "emulator", "ghostty").unwrap();
@@ -345,6 +351,7 @@ fn set_global_setting_rejects_bad_value_and_unknown_key() {
     use quickdev::config::set_global_setting;
     let mut config = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![],
     };
     assert!(set_global_setting(&mut config, "emulator", "kitty").is_err());
