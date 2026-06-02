@@ -3,6 +3,7 @@ pub enum TabStrategy {
     CliTab,
     AppleScriptTab,
     TerminalAppTab,
+    GnomeTerminalLoadConfig,
     WindowOnly,
 }
 
@@ -40,11 +41,18 @@ pub fn select_tab_strategy(
             _ => TabStrategy::WindowOnly,
         },
         "linux" => match emulator {
-            Some("terminal") | None if caps.ptyxis_available || caps.gnome_terminal_available => {
-                TabStrategy::CliTab
+            Some("gnome-terminal") if caps.gnome_terminal_available => {
+                TabStrategy::GnomeTerminalLoadConfig
             }
-            Some("ghostty") => TabStrategy::WindowOnly,
-            None => TabStrategy::WindowOnly,
+            Some("gnome-terminal") => TabStrategy::WindowOnly,
+            // Explicit Ptyxis/Ghostty open windows (no single-window CLI tabs).
+            Some("ptyxis") | Some("ghostty") => TabStrategy::WindowOnly,
+            // Auto: never silently prefer gnome-terminal over Ptyxis. Only tab
+            // when gnome-terminal is the terminal that will actually be used.
+            Some("terminal") | None if caps.ptyxis_available => TabStrategy::WindowOnly,
+            Some("terminal") | None if caps.gnome_terminal_available => {
+                TabStrategy::GnomeTerminalLoadConfig
+            }
             _ => TabStrategy::WindowOnly,
         },
         "windows" => {

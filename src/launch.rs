@@ -407,9 +407,9 @@ fn launch_terminal_tabs(
         match select_tab_strategy(std::env::consts::OS, first_emulator, &caps) {
             TabStrategy::AppleScriptTab => launch_ghostty_applescript_tabs(terminals),
             TabStrategy::TerminalAppTab => launch_terminal_app_tabs(terminals),
-            TabStrategy::CliTab | TabStrategy::WindowOnly => {
-                Err("unsupported tab emulator".to_string())
-            }
+            TabStrategy::CliTab
+            | TabStrategy::GnomeTerminalLoadConfig
+            | TabStrategy::WindowOnly => Err("unsupported tab emulator".to_string()),
         }
     }
 
