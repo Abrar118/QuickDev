@@ -1,6 +1,6 @@
 {
   "name": "@panda-orion/quickdev",
-  "version": "0.3.0",
+  "version": "0.3.1",
   "description": "Cross-platform CLI for managing project terminal and app launch configurations",
   "bin": {
     "quickdev": "bin/quickdev.js"
