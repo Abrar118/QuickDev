@@ -2,14 +2,21 @@ use crate::adapters::{
     command_exists, infer_tool_id, infer_tool_id_from_path, is_editor_tool,
     launch_command_for_tool, resolve_command,
 };
-use crate::ghostty_applescript::{build_script as build_ghostty_script, ResolvedTerminal};
 use crate::models::ProjectConfig;
+use std::path::Path;
+
+// These pull in the tab-grouping machinery, which is only invoked from
+// macOS-gated code paths below; importing them unconditionally would trip
+// `-D unused-imports` on Linux/Windows builds.
+#[cfg(target_os = "macos")]
+use crate::ghostty_applescript::{build_script as build_ghostty_script, ResolvedTerminal};
+#[cfg(target_os = "macos")]
 use crate::tab_strategy::{select_tab_strategy, TabCapabilities, TabStrategy};
+#[cfg(target_os = "macos")]
 use crate::terminal_app::{
     build_auto_tab_script, build_system_events_tab_script, build_window_script,
     read_tabbing_preference, TabbingPreference,
 };
-use std::path::Path;
 use std::process::Command;
 
 #[allow(dead_code)]
@@ -414,7 +421,7 @@ fn launch_terminal_tabs(
     }
 }
 
-#[allow(dead_code)]
+#[cfg(target_os = "macos")]
 fn probe_tab_capabilities() -> TabCapabilities {
     TabCapabilities {
         ghostty_available: command_exists("ghostty"),
@@ -426,6 +433,7 @@ fn probe_tab_capabilities() -> TabCapabilities {
     }
 }
 
+#[cfg(target_os = "macos")]
 fn ghostty_version() -> Option<String> {
     let ghostty_cmd = launch_command_for_tool(std::env::consts::OS, "ghostty")?;
     let output = Command::new(ghostty_cmd).arg("+version").output().ok()?;
@@ -435,6 +443,7 @@ fn ghostty_version() -> Option<String> {
     Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
 }
 
+#[cfg(target_os = "macos")]
 fn ghostty_applescript_enabled() -> bool {
     let Some(ghostty_cmd) = launch_command_for_tool(std::env::consts::OS, "ghostty") else {
         return false;

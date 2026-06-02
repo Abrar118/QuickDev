@@ -1,6 +1,10 @@
 use crate::ghostty_applescript::ResolvedTerminal;
 use crate::launch::escape_applescript_string;
+// Interactive prompt and `defaults` invocation only exist on macOS; importing
+// these unconditionally trips `-D unused-imports` on Linux/Windows.
+#[cfg(target_os = "macos")]
 use std::io::{self, IsTerminal, Write};
+#[cfg(target_os = "macos")]
 use std::process::Command;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -89,6 +93,10 @@ fn read_domain_tabbing_preference(domain: &str) -> Option<TabbingPreference> {
     }
 }
 
+// The `return` in the non-macOS arm is required for the cfg-gated branches to
+// resolve unambiguously to a single tail expression per platform; clippy's
+// needless_return doesn't account for that.
+#[allow(clippy::needless_return)]
 pub fn prompt_to_enable_terminal_tabbing(declined: bool) -> PromptOutcome {
     #[cfg(not(target_os = "macos"))]
     {
@@ -129,28 +137,21 @@ pub enum PromptOutcome {
     WriteFailed(String),
 }
 
+#[cfg(target_os = "macos")]
 fn write_terminal_tabbing_always() -> Result<(), String> {
-    #[cfg(target_os = "macos")]
-    {
-        let status = Command::new("defaults")
-            .args([
-                "write",
-                "com.apple.Terminal",
-                "AppleWindowTabbingMode",
-                "-string",
-                "always",
-            ])
-            .status()
-            .map_err(|e| format!("failed to run defaults: {e}"))?;
-        if status.success() {
-            Ok(())
-        } else {
-            Err("defaults write failed".to_string())
-        }
-    }
-
-    #[cfg(not(target_os = "macos"))]
-    {
+    let status = Command::new("defaults")
+        .args([
+            "write",
+            "com.apple.Terminal",
+            "AppleWindowTabbingMode",
+            "-string",
+            "always",
+        ])
+        .status()
+        .map_err(|e| format!("failed to run defaults: {e}"))?;
+    if status.success() {
         Ok(())
+    } else {
+        Err("defaults write failed".to_string())
     }
 }
