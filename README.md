@@ -423,18 +423,23 @@ quickdev config unset emulator
 
 | Emulator | macOS | Linux | Windows | Tabs |
 |----------|-------|-------|---------|------|
-| Ghostty | yes | yes | no | no (separate windows) |
+| Ghostty | yes | yes | no | macOS: yes (≥ 1.3); Linux: no |
 | Terminal.app | yes | - | - | yes |
-| gnome-terminal | - | yes | - | yes |
+| Ptyxis | - | yes | - | see Linux/Wayland note |
+| gnome-terminal | - | yes | - | see Linux/Wayland note |
 | Windows Terminal | - | - | yes | yes |
 | PowerShell 7 | - | - | yes | no (separate windows) |
 | konsole | - | yes | - | no |
 | alacritty | - | yes | - | no |
 | xterm | - | yes | - | no |
 
-**Tab behavior:** When multiple terminals are configured, emulators that support tabs will open subsequent terminals as tabs in the same window. The first terminal always opens a new window.
+**Tab behavior:** When multiple terminals are configured, emulators that support tabbing open subsequent terminals as tabs in one window; otherwise each opens its own window. When tabbing isn't available QuickDev always falls back to separate windows rather than failing.
 
-**Ghostty note:** Ghostty does not support opening tabs from the CLI ([ghostty-org/ghostty#12136](https://github.com/ghostty-org/ghostty/issues/12136)). Each terminal opens as a separate window.
+**macOS — Ghostty:** With Ghostty 1.3+ (and `macos-applescript` enabled, the default), QuickDev drives Ghostty's AppleScript API to open all terminals as tabs in a single window, each in its own directory. macOS prompts once for the **Automation** permission; if it's denied or Ghostty is older, QuickDev falls back to separate windows.
+
+**macOS — Terminal.app:** Opens tabs automatically when `AppleWindowTabbingMode = always` (QuickDev offers to set this on first use); otherwise it uses ⌘T via System Events, which needs the **Accessibility** permission. Falls back to separate windows if denied.
+
+**Linux / Wayland:** On GNOME/Wayland, the terminal CLIs (Ptyxis, gnome-terminal) cannot open multiple tabs that each carry their own working directory and command: a separate `--tab` invocation opens a new window instead of attaching to the running one, and a single invocation applies only the *last* `-d`/command. So on Wayland QuickDev opens each terminal as its own window — with the correct directory and command. **Ptyxis** is the preferred Linux terminal and is auto-detected ahead of gnome-terminal. For a true single-window tabbed layout on Wayland, a terminal multiplexer (e.g. tmux or zellij) is currently the only option and is not built in.
 
 ## Tool Detection
 
