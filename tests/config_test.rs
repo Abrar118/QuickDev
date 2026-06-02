@@ -325,6 +325,28 @@ fn is_supported_emulator_accepts_known_only() {
 }
 
 #[test]
+fn gnome_terminal_and_ptyxis_are_supported_emulators() {
+    use quickdev::config::is_supported_emulator;
+    assert!(is_supported_emulator("gnome-terminal"));
+    assert!(is_supported_emulator("ptyxis"));
+}
+
+#[test]
+fn set_global_emulator_accepts_new_linux_terminals() {
+    use quickdev::config::set_global_setting;
+    for value in ["gnome-terminal", "ptyxis"] {
+        let mut config = GlobalConfig {
+            emulator: None,
+            terminal_app_tabbing_prompt_declined: false,
+            projects: vec![],
+        };
+        let msg = set_global_setting(&mut config, "emulator", value).unwrap();
+        assert_eq!(config.emulator.as_deref(), Some(value));
+        assert!(msg.contains(value));
+    }
+}
+
+#[test]
 fn set_get_unset_global_emulator() {
     use quickdev::config::{get_global_setting, set_global_setting, unset_global_setting};
     let mut config = GlobalConfig {

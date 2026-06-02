@@ -124,6 +124,8 @@ fn pick_emulator() -> Result<Option<String>, String> {
         "Auto-detect (default)".to_string(),
         "ghostty".to_string(),
         "terminal".to_string(),
+        "gnome-terminal".to_string(),
+        "ptyxis".to_string(),
     ];
     let selected = fzf::fzf_select_one(&options, "Select terminal emulator:")?;
 

@@ -5,6 +5,7 @@ pub mod config;
 pub mod doctor;
 pub mod fzf;
 pub mod ghostty_applescript;
+pub mod gnome_terminal;
 pub mod launch;
 pub mod models;
 pub mod parse;

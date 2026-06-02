@@ -6,17 +6,20 @@ mod commands;
 mod config;
 mod doctor;
 mod fzf;
-// Tab-grouping modules are driven only from macOS-gated code in the binary.
-// `tab_strategy` has no other consumer, so it's macOS-only here; the other two
-// are needed cross-platform (terminal_app by command handling, ghostty_applescript
-// as its dependency) but their tab-building items are exercised only on macOS,
-// so suppress dead-code there without masking it on the macOS build.
+// Tab-grouping modules used from platform-gated code in the binary.
+// `tab_strategy` is compiled on macOS and Linux (Linux needs it for gnome-terminal
+// tab dispatch); the other two (ghostty_applescript, terminal_app) remain macOS-only
+// consumers but are declared unconditionally — suppress dead-code on non-macOS
+// without masking it on the macOS build.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod ghostty_applescript;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod gnome_terminal;
 mod launch;
 mod models;
 mod parse;
-#[cfg(target_os = "macos")]
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 mod tab_strategy;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod terminal_app;

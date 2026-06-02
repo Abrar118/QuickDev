@@ -83,6 +83,30 @@ fn watch_process_unknown_emulator_is_none() {
 }
 
 #[test]
+fn watch_process_for_explicit_gnome_terminal() {
+    assert_eq!(
+        emulator_watch_process(Some("gnome-terminal"), false, false, "linux"),
+        Some("gnome-terminal-server")
+    );
+    assert_eq!(
+        emulator_watch_process(Some("gnome-terminal"), false, false, "macos"),
+        None
+    );
+}
+
+#[test]
+fn watch_process_for_explicit_ptyxis() {
+    assert_eq!(
+        emulator_watch_process(Some("ptyxis"), false, true, "linux"),
+        Some("ptyxis")
+    );
+    assert_eq!(
+        emulator_watch_process(Some("ptyxis"), false, false, "windows"),
+        None
+    );
+}
+
+#[test]
 fn poll_until_returns_true_when_condition_met() {
     let mut n = 0;
     let ok = poll_until(
@@ -517,7 +541,9 @@ fn tab_strategy_macos_none_uses_terminal_app_only_without_ghostty() {
 }
 
 #[test]
-fn tab_strategy_prefers_linux_ptyxis_cli_tabs() {
+fn tab_strategy_linux_ptyxis_present_auto_is_window_only() {
+    // Ptyxis has no single-window CLI tab support; when it is available auto
+    // selection must prefer WindowOnly even if gnome-terminal is also present.
     let caps = TabCapabilities {
         ghostty_available: false,
         ghostty_version: None,
@@ -529,7 +555,7 @@ fn tab_strategy_prefers_linux_ptyxis_cli_tabs() {
 
     assert_eq!(
         select_tab_strategy("linux", None, &caps),
-        TabStrategy::CliTab
+        TabStrategy::WindowOnly
     );
 }
 
@@ -608,4 +634,73 @@ fn terminal_app_tabbing_preference_parses_always() {
         Some(TabbingPreference::Fullscreen)
     );
     assert_eq!(parse_tabbing_preference(""), None);
+}
+
+#[test]
+fn linux_gnome_terminal_explicit_uses_load_config() {
+    let caps = TabCapabilities {
+        gnome_terminal_available: true,
+        ptyxis_available: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", Some("gnome-terminal"), &caps),
+        TabStrategy::GnomeTerminalLoadConfig
+    );
+}
+
+#[test]
+fn linux_ptyxis_and_ghostty_explicit_are_window_only() {
+    let caps = TabCapabilities {
+        gnome_terminal_available: true,
+        ptyxis_available: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", Some("ptyxis"), &caps),
+        TabStrategy::WindowOnly
+    );
+    assert_eq!(
+        select_tab_strategy("linux", Some("ghostty"), &caps),
+        TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn linux_auto_prefers_ptyxis_windows_over_gnome_tabs() {
+    let caps = TabCapabilities {
+        gnome_terminal_available: true,
+        ptyxis_available: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", None, &caps),
+        TabStrategy::WindowOnly
+    );
+    assert_eq!(
+        select_tab_strategy("linux", Some("terminal"), &caps),
+        TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn linux_auto_tabs_when_only_gnome_terminal() {
+    let caps = TabCapabilities {
+        gnome_terminal_available: true,
+        ptyxis_available: false,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", None, &caps),
+        TabStrategy::GnomeTerminalLoadConfig
+    );
+}
+
+#[test]
+fn linux_no_terminals_is_window_only() {
+    let caps = TabCapabilities::default();
+    assert_eq!(
+        select_tab_strategy("linux", None, &caps),
+        TabStrategy::WindowOnly
+    );
 }
