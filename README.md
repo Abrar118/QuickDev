@@ -349,7 +349,7 @@ path = "/Applications/Docker.app"
 | `name` | yes | Label for this terminal tab |
 | `path` | yes | Working directory, relative to project root (e.g., `.`, `./src`) |
 | `command` | no | Startup command to run when the terminal opens |
-| `emulator` | no | Terminal emulator override: `"ghostty"`, `"terminal"`. Omit for auto-detect |
+| `emulator` | no | Terminal emulator override: `"ghostty"`, `"terminal"`, `"gnome-terminal"`, `"ptyxis"`. Omit for auto-detect |
 
 #### Application fields
 
@@ -414,7 +414,7 @@ Auto-detect tries Ghostty first, then falls back to the platform default.
 Set the global default terminal emulator without hand-editing the global config:
 
 ```bash
-quickdev config set emulator ghostty   # ghostty | terminal
+quickdev config set emulator ghostty   # ghostty | terminal | gnome-terminal | ptyxis
 quickdev config get emulator
 quickdev config unset emulator
 ```
@@ -425,8 +425,8 @@ quickdev config unset emulator
 |----------|-------|-------|---------|------|
 | Ghostty | yes | yes | no | macOS: yes (≥ 1.3); Linux: no |
 | Terminal.app | yes | - | - | yes |
-| Ptyxis | - | yes | - | see Linux/Wayland note |
-| gnome-terminal | - | yes | - | see Linux/Wayland note |
+| Ptyxis | - | yes | - | no (separate windows) |
+| gnome-terminal | - | yes | - | yes (via `--load-config`) |
 | Windows Terminal | - | - | yes | yes |
 | PowerShell 7 | - | - | yes | no (separate windows) |
 | konsole | - | yes | - | no |
@@ -439,7 +439,9 @@ quickdev config unset emulator
 
 **macOS — Terminal.app:** Opens tabs automatically when `AppleWindowTabbingMode = always` (QuickDev offers to set this on first use); otherwise it uses ⌘T via System Events, which needs the **Accessibility** permission. Falls back to separate windows if denied.
 
-**Linux / Wayland:** On GNOME/Wayland, the terminal CLIs (Ptyxis, gnome-terminal) cannot open multiple tabs that each carry their own working directory and command: a separate `--tab` invocation opens a new window instead of attaching to the running one, and a single invocation applies only the *last* `-d`/command. So on Wayland QuickDev opens each terminal as its own window — with the correct directory and command. **Ptyxis** is the preferred Linux terminal and is auto-detected ahead of gnome-terminal. For a true single-window tabbed layout on Wayland, a terminal multiplexer (e.g. tmux or zellij) is currently the only option and is not built in.
+**Linux — gnome-terminal:** Opens all terminals as tabs in one window via `gnome-terminal --load-config`, each tab in its own directory running its own command. This is used when you set `emulator = "gnome-terminal"`, or when gnome-terminal is the only supported terminal installed.
+
+**Linux — Ptyxis & Ghostty:** Open one window per terminal (each with the correct directory and command). Neither CLI can open tabs that carry their own directory and command: Ptyxis treats `-d`/`-x` as last-wins and its cross-process `--tab` opens a new window; Ghostty (Linux/GTK) has no CLI tab action at all. **Ptyxis** is the preferred Linux terminal and is auto-detected ahead of gnome-terminal — so on a machine with Ptyxis installed, set `emulator = "gnome-terminal"` explicitly to get a single tabbed window. For Ptyxis or Ghostty, a terminal multiplexer (e.g. tmux or zellij) is the only route to single-window tabs and is not built in.
 
 ## Tool Detection
 
