@@ -24,7 +24,7 @@ pub fn load_global_config(path: &Path) -> Result<GlobalConfig, String> {
 const GLOBAL_COMMENT_HEADER: &str = "\
 # QuickDev global configuration
 #
-# emulator = (optional) Default terminal emulator: \"ghostty\", \"terminal\"
+# emulator = (optional) Default terminal emulator: \"ghostty\", \"terminal\", \"gnome-terminal\", \"ptyxis\"
 # terminal_app_tabbing_prompt_declined = internal flag; avoids re-prompting after decline
 #
 # Projects are auto-managed by quickdev init / deregister
@@ -58,7 +58,7 @@ const TOML_COMMENT_HEADER: &str = "\
 #   name    = Label for this terminal tab
 #   path    = Working directory relative to project root (e.g., \".\", \"./src\")
 #   command  = (optional) Startup command to run when the terminal opens
-#   emulator = (optional) Terminal emulator: \"ghostty\", \"terminal\". Omit for auto-detect
+#   emulator = (optional) Terminal emulator: \"ghostty\", \"terminal\", \"gnome-terminal\", \"ptyxis\". Omit for auto-detect
 #
 # [[applications]]
 #   name = Application display name
@@ -135,7 +135,7 @@ pub fn parse_project_selection(selected: &str) -> Result<usize, String> {
         .ok_or_else(|| "invalid selection".to_string())
 }
 
-pub const SUPPORTED_EMULATORS: &[&str] = &["ghostty", "terminal"];
+pub const SUPPORTED_EMULATORS: &[&str] = &["ghostty", "terminal", "gnome-terminal", "ptyxis"];
 
 pub fn is_supported_emulator(value: &str) -> bool {
     SUPPORTED_EMULATORS.contains(&value)
