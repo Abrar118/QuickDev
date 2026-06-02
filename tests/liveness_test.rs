@@ -54,6 +54,7 @@ fn project_statuses_maps_all_entries() {
 
     let global = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![
             entry("ok", dir.path().to_str().unwrap()),
             entry("gone", "/no/such/path/quickdev-xyz"),
@@ -94,6 +95,7 @@ fn prune_projects_removes_unhealthy_and_returns_names_in_order() {
 
     let mut global = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![
             entry("dead-1", "/no/such/path/quickdev-a"),
             entry("alive", dir.path().to_str().unwrap()),
@@ -115,6 +117,7 @@ fn prune_projects_keeps_all_when_healthy() {
 
     let mut global = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![entry("alive", dir.path().to_str().unwrap())],
     };
 

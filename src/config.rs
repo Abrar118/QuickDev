@@ -12,6 +12,7 @@ pub fn load_global_config(path: &Path) -> Result<GlobalConfig, String> {
     if !path.exists() {
         return Ok(GlobalConfig {
             emulator: None,
+            terminal_app_tabbing_prompt_declined: false,
             projects: vec![],
         });
     }
@@ -24,6 +25,7 @@ const GLOBAL_COMMENT_HEADER: &str = "\
 # QuickDev global configuration
 #
 # emulator = (optional) Default terminal emulator: \"ghostty\", \"terminal\"
+# terminal_app_tabbing_prompt_declined = internal flag; avoids re-prompting after decline
 #
 # Projects are auto-managed by quickdev init / deregister
 ";

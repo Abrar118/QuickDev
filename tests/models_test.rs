@@ -45,6 +45,7 @@ fn project_config_round_trip() {
 fn global_config_round_trip() {
     let config = GlobalConfig {
         emulator: None,
+        terminal_app_tabbing_prompt_declined: false,
         projects: vec![
             GlobalProjectEntry {
                 name: "app-one".to_string(),

@@ -4,6 +4,8 @@ use serde::{Deserialize, Serialize};
 pub struct GlobalConfig {
     pub emulator: Option<String>,
     #[serde(default)]
+    pub terminal_app_tabbing_prompt_declined: bool,
+    #[serde(default)]
     pub projects: Vec<GlobalProjectEntry>,
 }
 

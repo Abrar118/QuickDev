@@ -4,6 +4,19 @@ use crate::adapters::{
 };
 use crate::models::ProjectConfig;
 use std::path::Path;
+
+// These pull in the tab-grouping machinery, which is only invoked from
+// macOS-gated code paths below; importing them unconditionally would trip
+// `-D unused-imports` on Linux/Windows builds.
+#[cfg(target_os = "macos")]
+use crate::ghostty_applescript::{build_script as build_ghostty_script, ResolvedTerminal};
+#[cfg(target_os = "macos")]
+use crate::tab_strategy::{select_tab_strategy, TabCapabilities, TabStrategy};
+#[cfg(target_os = "macos")]
+use crate::terminal_app::{
+    build_auto_tab_script, build_system_events_tab_script, build_window_script,
+    read_tabbing_preference, TabbingPreference,
+};
 use std::process::Command;
 
 #[allow(dead_code)]
@@ -49,25 +62,36 @@ pub fn render_results(header: &str, results: &[LaunchResult]) -> String {
 pub fn emulator_watch_process(
     emulator: Option<&str>,
     ghostty_available: bool,
+    ptyxis_available: bool,
     os: &str,
 ) -> Option<&'static str> {
     match emulator {
         Some("ghostty") => Some("ghostty"),
-        Some("terminal") => native_terminal_process(os),
+        Some("terminal") => native_terminal_process(os, ptyxis_available),
         Some(_) => None,
         None => {
-            if ghostty_available {
+            // Mirror launch_terminal's auto-selection: an unspecified emulator
+            // only attempts Ghostty on macOS (the try_ghostty fallback is
+            // cfg-gated there). On other platforms None always resolves to the
+            // native terminal, so we must not watch Ghostty even when its
+            // binary is installed — otherwise we'd poll a process we never
+            // launch while Ptyxis/gnome-terminal actually cold-starts.
+            if os == "macos" && ghostty_available {
                 Some("ghostty")
             } else {
-                native_terminal_process(os)
+                native_terminal_process(os, ptyxis_available)
             }
         }
     }
 }
 
-fn native_terminal_process(os: &str) -> Option<&'static str> {
+fn native_terminal_process(os: &str, ptyxis_available: bool) -> Option<&'static str> {
     match os {
         "macos" => Some("Terminal"),
+        // Ptyxis is single-instance; when it's the emulator that will actually
+        // cold-start (no ghostty), watch `ptyxis` so tab #2+ don't race its
+        // startup. Otherwise fall back to gnome-terminal's server process.
+        "linux" if ptyxis_available => Some("ptyxis"),
         "linux" => Some("gnome-terminal-server"),
         "windows" => Some("WindowsTerminal.exe"),
         _ => None,
@@ -234,18 +258,25 @@ pub fn launch_project(
     let ghostty_available = launch_command_for_tool(std::env::consts::OS, "ghostty")
         .map(command_exists)
         .unwrap_or(false);
-    let watch = emulator_watch_process(first_emulator, ghostty_available, std::env::consts::OS);
+    let ptyxis_available = command_exists("ptyxis");
+    let watch = emulator_watch_process(
+        first_emulator,
+        ghostty_available,
+        ptyxis_available,
+        std::env::consts::OS,
+    );
     let emulator_was_running = watch.map(process_running).unwrap_or(true);
     let multiple = config.terminals.len() > 1;
 
+    let mut terminal_results: Vec<Option<LaunchResult>> =
+        config.terminals.iter().map(|_| None).collect();
+    let mut prepared_terminals = Vec::new();
+
     for (i, terminal) in config.terminals.iter().enumerate() {
-        if i > 0 {
-            std::thread::sleep(std::time::Duration::from_millis(100));
-        }
         let resolved_path = match resolve_terminal_path(project_root, &terminal.path) {
             Ok(path) => path,
             Err(e) => {
-                results.push(LaunchResult {
+                terminal_results[i] = Some(LaunchResult {
                     label: terminal.name.clone(),
                     kind: "terminal",
                     success: false,
@@ -255,25 +286,72 @@ pub fn launch_project(
                 continue;
             }
         };
-        let effective_emulator = terminal.emulator.as_deref().or(global_emulator);
-        let result = launch_terminal(
-            &resolved_path,
-            terminal.command.as_deref(),
-            i,
-            effective_emulator,
-        );
-        results.push(LaunchResult {
-            label: terminal.name.clone(),
-            kind: "terminal",
-            success: result.is_ok(),
-            error: result.err(),
-            detail: Some(terminal_detail(&resolved_path, terminal.command.as_deref())),
+        prepared_terminals.push(PreparedTerminal {
+            original_index: i,
+            name: terminal.name.clone(),
+            path: resolved_path,
+            command: terminal.command.clone(),
+            emulator: terminal.emulator.clone(),
         });
+    }
 
-        if i == 0 && multiple && !emulator_was_running {
-            if let Some(name) = watch {
-                wait_for_emulator_ready(name);
+    let tabs_launched = if prepared_terminals.len() > 1 {
+        launch_terminal_tabs(&prepared_terminals, global_emulator).is_ok()
+    } else {
+        false
+    };
+
+    if tabs_launched {
+        for terminal in &prepared_terminals {
+            terminal_results[terminal.original_index] = Some(LaunchResult {
+                label: terminal.name.clone(),
+                kind: "terminal",
+                success: true,
+                error: None,
+                detail: Some(terminal_detail(&terminal.path, terminal.command.as_deref())),
+            });
+        }
+    } else {
+        for (launch_index, terminal) in prepared_terminals.iter().enumerate() {
+            if launch_index > 0 {
+                std::thread::sleep(std::time::Duration::from_millis(100));
             }
+            let effective_emulator = terminal.emulator.as_deref().or(global_emulator);
+            let result = launch_terminal(
+                &terminal.path,
+                terminal.command.as_deref(),
+                launch_index,
+                effective_emulator,
+            );
+            terminal_results[terminal.original_index] = Some(LaunchResult {
+                label: terminal.name.clone(),
+                kind: "terminal",
+                success: result.is_ok(),
+                error: result.err(),
+                detail: Some(terminal_detail(&terminal.path, terminal.command.as_deref())),
+            });
+
+            if launch_index == 0 && multiple && !emulator_was_running {
+                if let Some(name) = watch {
+                    wait_for_emulator_ready(name);
+                }
+            }
+        }
+    }
+
+    for result in terminal_results.into_iter().flatten() {
+        results.push(result);
+    }
+
+    if prepared_terminals.is_empty() && multiple && !emulator_was_running {
+        if let Some(name) = watch {
+            wait_for_emulator_ready(name);
+        }
+    }
+
+    if !prepared_terminals.is_empty() && tabs_launched && !emulator_was_running {
+        if let Some(name) = watch {
+            wait_for_emulator_ready(name);
         }
     }
 
@@ -297,6 +375,140 @@ pub fn launch_project(
     }
 
     results
+}
+
+#[derive(Debug)]
+struct PreparedTerminal {
+    original_index: usize,
+    name: String,
+    path: String,
+    command: Option<String>,
+    emulator: Option<String>,
+}
+
+fn launch_terminal_tabs(
+    terminals: &[PreparedTerminal],
+    global_emulator: Option<&str>,
+) -> Result<(), String> {
+    let first_emulator = terminals
+        .first()
+        .and_then(|t| t.emulator.as_deref())
+        .or(global_emulator);
+    if !terminals
+        .iter()
+        .all(|t| t.emulator.as_deref().or(global_emulator) == first_emulator)
+    {
+        return Err("mixed terminal emulators cannot share tabs".to_string());
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let caps = probe_tab_capabilities();
+        match select_tab_strategy(std::env::consts::OS, first_emulator, &caps) {
+            TabStrategy::AppleScriptTab => launch_ghostty_applescript_tabs(terminals),
+            TabStrategy::TerminalAppTab => launch_terminal_app_tabs(terminals),
+            TabStrategy::CliTab | TabStrategy::WindowOnly => {
+                Err("unsupported tab emulator".to_string())
+            }
+        }
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        let _ = terminals;
+        let _ = global_emulator;
+        Err("batch tabs are only handled on macOS".to_string())
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn probe_tab_capabilities() -> TabCapabilities {
+    TabCapabilities {
+        ghostty_available: command_exists("ghostty"),
+        ghostty_version: ghostty_version(),
+        ghostty_applescript: ghostty_applescript_enabled(),
+        ptyxis_available: command_exists("ptyxis"),
+        gnome_terminal_available: command_exists("gnome-terminal"),
+        wt_available: command_exists("wt"),
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn ghostty_version() -> Option<String> {
+    let ghostty_cmd = launch_command_for_tool(std::env::consts::OS, "ghostty")?;
+    let output = Command::new(ghostty_cmd).arg("+version").output().ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    Some(String::from_utf8_lossy(&output.stdout).trim().to_string())
+}
+
+#[cfg(target_os = "macos")]
+fn ghostty_applescript_enabled() -> bool {
+    let Some(ghostty_cmd) = launch_command_for_tool(std::env::consts::OS, "ghostty") else {
+        return false;
+    };
+    let output = Command::new(ghostty_cmd).arg("+show-config").output().ok();
+    let Some(output) = output else {
+        return true;
+    };
+    if !output.status.success() {
+        return true;
+    }
+    !String::from_utf8_lossy(&output.stdout)
+        .lines()
+        .any(|line| line.trim() == "macos-applescript = false")
+}
+
+#[cfg(target_os = "macos")]
+fn launch_ghostty_applescript_tabs(terminals: &[PreparedTerminal]) -> Result<(), String> {
+    let resolved: Vec<ResolvedTerminal<'_>> = terminals
+        .iter()
+        .map(|terminal| ResolvedTerminal {
+            cwd: &terminal.path,
+            command: terminal.command.as_deref(),
+        })
+        .collect();
+    let script = build_ghostty_script(&resolved)?;
+    run_osascript(&script).map_err(|e| format!("Ghostty AppleScript tabs failed: {e}"))
+}
+
+#[cfg(target_os = "macos")]
+fn launch_terminal_app_tabs(terminals: &[PreparedTerminal]) -> Result<(), String> {
+    let resolved: Vec<ResolvedTerminal<'_>> = terminals
+        .iter()
+        .map(|terminal| ResolvedTerminal {
+            cwd: &terminal.path,
+            command: terminal.command.as_deref(),
+        })
+        .collect();
+    let script = match read_tabbing_preference() {
+        Some(TabbingPreference::Always) => build_auto_tab_script(&resolved),
+        _ => build_system_events_tab_script(&resolved),
+    };
+    run_osascript(&script).map_err(|e| format!("Terminal.app tab launch failed: {e}"))
+}
+
+#[cfg(target_os = "macos")]
+fn run_osascript(script: &str) -> Result<(), String> {
+    // Wait for osascript and inspect its exit status: a failing AppleScript
+    // (e.g. Automation/Accessibility not yet granted, or a script error) exits
+    // non-zero. We must surface that so the caller falls back to separate
+    // windows instead of reporting phantom success. `.spawn()` would ignore it.
+    let output = Command::new("osascript")
+        .args(["-e", script])
+        .output()
+        .map_err(|e| format!("osascript failed: {e}"))?;
+    if output.status.success() {
+        return Ok(());
+    }
+    let detail = String::from_utf8_lossy(&output.stderr);
+    let detail = detail.trim();
+    if detail.is_empty() {
+        Err("osascript reported an error".to_string())
+    } else {
+        Err(detail.to_string())
+    }
 }
 
 pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result<String, String> {
@@ -432,6 +644,7 @@ fn launch_terminal(
         None => {}
     }
 
+    #[cfg(target_os = "macos")]
     if try_ghostty(resolved_path, command).is_ok() {
         return Ok(());
     }
@@ -470,33 +683,23 @@ fn run_in_platform_terminal(
     command: Option<&str>,
     tab_index: usize,
 ) -> Result<(), String> {
+    #[cfg(any(
+        target_os = "windows",
+        all(not(target_os = "macos"), not(target_os = "windows"))
+    ))]
     let cmd_str = command.unwrap_or("");
 
     #[cfg(target_os = "macos")]
     {
-        let cd_part = format!("cd '{}'", cwd.replace('\'', "'\\''"));
-        let full = if cmd_str.is_empty() {
-            cd_part
-        } else {
-            format!("{cd_part} && {cmd_str}")
-        };
-        let escaped = escape_applescript_string(&full);
-        let script = if tab_index == 0 {
-            format!(
-                "tell application \"Terminal\"\n    activate\n    do script \"{escaped}\"\nend tell"
-            )
-        } else {
-            format!(
-                "tell application \"Terminal\"\n    activate\n    do script \"{escaped}\" in front window\nend tell"
-            )
-        };
-        Command::new("osascript")
-            .args(["-e", &script])
-            .stdout(std::process::Stdio::null())
-            .stderr(std::process::Stdio::null())
-            .spawn()
-            .map(|_| ())
-            .map_err(|e| format!("Terminal.app launch failed: {e}"))
+        let _ = tab_index;
+        let script = build_window_script(ResolvedTerminal {
+            cwd,
+            command: command.filter(|cmd| !cmd.is_empty()),
+        });
+        // Use the status-checking helper, not a fire-and-forget spawn: a denied
+        // Automation permission makes osascript exit non-zero, and we must
+        // report that as a failure rather than phantom success.
+        run_osascript(&script).map_err(|e| format!("Terminal.app launch failed: {e}"))
     }
 
     #[cfg(target_os = "windows")]
@@ -561,6 +764,18 @@ fn run_in_platform_terminal(
         } else {
             format!("cd '{escaped_cwd}' && {cmd_str}; exec {user_shell}")
         };
+
+        if command_exists("ptyxis") {
+            let resolved = resolve_command("ptyxis").unwrap_or_else(|| "ptyxis".to_string());
+            let mut cmd = Command::new(resolved);
+            if tab_index > 0 {
+                cmd.arg("--tab");
+            }
+            cmd.args(["-d", cwd, "--", &user_shell, "-lc", &shell_command]);
+            if cmd.spawn().is_ok() {
+                return Ok(());
+            }
+        }
 
         if command_exists("gnome-terminal") {
             let resolved =

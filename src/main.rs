@@ -6,9 +6,20 @@ mod commands;
 mod config;
 mod doctor;
 mod fzf;
+// Tab-grouping modules are driven only from macOS-gated code in the binary.
+// `tab_strategy` has no other consumer, so it's macOS-only here; the other two
+// are needed cross-platform (terminal_app by command handling, ghostty_applescript
+// as its dependency) but their tab-building items are exercised only on macOS,
+// so suppress dead-code there without masking it on the macOS build.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod ghostty_applescript;
 mod launch;
 mod models;
 mod parse;
+#[cfg(target_os = "macos")]
+mod tab_strategy;
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+mod terminal_app;
 mod validate;
 
 use clap::Parser;
