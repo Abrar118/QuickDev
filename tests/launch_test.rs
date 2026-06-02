@@ -83,6 +83,30 @@ fn watch_process_unknown_emulator_is_none() {
 }
 
 #[test]
+fn watch_process_for_explicit_gnome_terminal() {
+    assert_eq!(
+        emulator_watch_process(Some("gnome-terminal"), false, false, "linux"),
+        Some("gnome-terminal-server")
+    );
+    assert_eq!(
+        emulator_watch_process(Some("gnome-terminal"), false, false, "macos"),
+        None
+    );
+}
+
+#[test]
+fn watch_process_for_explicit_ptyxis() {
+    assert_eq!(
+        emulator_watch_process(Some("ptyxis"), false, true, "linux"),
+        Some("ptyxis")
+    );
+    assert_eq!(
+        emulator_watch_process(Some("ptyxis"), false, false, "windows"),
+        None
+    );
+}
+
+#[test]
 fn poll_until_returns_true_when_condition_met() {
     let mut n = 0;
     let ok = poll_until(

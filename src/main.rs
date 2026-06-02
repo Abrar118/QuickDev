@@ -13,6 +13,8 @@ mod fzf;
 // without masking it on the macOS build.
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod ghostty_applescript;
+#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+mod gnome_terminal;
 mod launch;
 mod models;
 mod parse;

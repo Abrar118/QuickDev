@@ -10,7 +10,9 @@ use std::path::Path;
 // `-D unused-imports` on Linux/Windows builds.
 #[cfg(target_os = "macos")]
 use crate::ghostty_applescript::{build_script as build_ghostty_script, ResolvedTerminal};
-#[cfg(target_os = "macos")]
+#[cfg(target_os = "linux")]
+use crate::gnome_terminal::{launch_gnome_terminal_load_config, GnomeTab};
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::tab_strategy::{select_tab_strategy, TabCapabilities, TabStrategy};
 #[cfg(target_os = "macos")]
 use crate::terminal_app::{
@@ -68,6 +70,8 @@ pub fn emulator_watch_process(
     match emulator {
         Some("ghostty") => Some("ghostty"),
         Some("terminal") => native_terminal_process(os, ptyxis_available),
+        Some("gnome-terminal") if os == "linux" => Some("gnome-terminal-server"),
+        Some("ptyxis") if os == "linux" => Some("ptyxis"),
         Some(_) => None,
         None => {
             // Mirror launch_terminal's auto-selection: an unspecified emulator
@@ -413,11 +417,39 @@ fn launch_terminal_tabs(
         }
     }
 
-    #[cfg(not(target_os = "macos"))]
+    #[cfg(target_os = "linux")]
+    {
+        let caps = probe_linux_tab_capabilities();
+        match select_tab_strategy(std::env::consts::OS, first_emulator, &caps) {
+            TabStrategy::GnomeTerminalLoadConfig => {
+                let tabs: Vec<GnomeTab<'_>> = terminals
+                    .iter()
+                    .map(|t| GnomeTab {
+                        title: &t.name,
+                        cwd: &t.path,
+                        command: t.command.as_deref(),
+                    })
+                    .collect();
+                launch_gnome_terminal_load_config(&tabs)
+            }
+            _ => Err("unsupported tab emulator".to_string()),
+        }
+    }
+
+    #[cfg(all(not(target_os = "macos"), not(target_os = "linux")))]
     {
         let _ = terminals;
         let _ = global_emulator;
-        Err("batch tabs are only handled on macOS".to_string())
+        Err("batch tabs are only handled on macOS and Linux (gnome-terminal)".to_string())
+    }
+}
+
+#[cfg(target_os = "linux")]
+fn probe_linux_tab_capabilities() -> TabCapabilities {
+    TabCapabilities {
+        ptyxis_available: command_exists("ptyxis"),
+        gnome_terminal_available: command_exists("gnome-terminal"),
+        ..TabCapabilities::default()
     }
 }
 
@@ -639,7 +671,12 @@ fn launch_terminal(
 
     match emulator {
         Some("ghostty") => return try_ghostty(resolved_path, command),
-        Some("terminal") => return run_in_platform_terminal(resolved_path, command, tab_index),
+        Some("terminal") => {
+            return run_in_platform_terminal(resolved_path, command, tab_index, None)
+        }
+        Some(forced @ ("gnome-terminal" | "ptyxis")) => {
+            return run_in_platform_terminal(resolved_path, command, tab_index, Some(forced))
+        }
         Some(other) => return Err(format!("unknown emulator: {other}")),
         None => {}
     }
@@ -649,7 +686,7 @@ fn launch_terminal(
         return Ok(());
     }
 
-    run_in_platform_terminal(resolved_path, command, tab_index)
+    run_in_platform_terminal(resolved_path, command, tab_index, None)
 }
 
 fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
@@ -682,6 +719,7 @@ fn run_in_platform_terminal(
     cwd: &str,
     command: Option<&str>,
     tab_index: usize,
+    forced: Option<&str>,
 ) -> Result<(), String> {
     #[cfg(any(
         target_os = "windows",
@@ -691,6 +729,9 @@ fn run_in_platform_terminal(
 
     #[cfg(target_os = "macos")]
     {
+        if let Some(name) = forced {
+            return Err(format!("{name} is only available on Linux"));
+        }
         let _ = tab_index;
         let script = build_window_script(ResolvedTerminal {
             cwd,
@@ -704,6 +745,9 @@ fn run_in_platform_terminal(
 
     #[cfg(target_os = "windows")]
     {
+        if let Some(name) = forced {
+            return Err(format!("{name} is only available on Linux"));
+        }
         if command_exists("wt") {
             let wt_resolved = resolve_command("wt").unwrap_or_else(|| "wt".to_string());
             if tab_index == 0 {
@@ -765,7 +809,10 @@ fn run_in_platform_terminal(
             format!("cd '{escaped_cwd}' && {cmd_str}; exec {user_shell}")
         };
 
-        if command_exists("ptyxis") {
+        let try_ptyxis = forced.is_none() || forced == Some("ptyxis");
+        let try_gnome = forced.is_none() || forced == Some("gnome-terminal");
+
+        if try_ptyxis && command_exists("ptyxis") {
             let resolved = resolve_command("ptyxis").unwrap_or_else(|| "ptyxis".to_string());
             let mut cmd = Command::new(resolved);
             if tab_index > 0 {
@@ -777,7 +824,7 @@ fn run_in_platform_terminal(
             }
         }
 
-        if command_exists("gnome-terminal") {
+        if try_gnome && command_exists("gnome-terminal") {
             let resolved =
                 resolve_command("gnome-terminal").unwrap_or_else(|| "gnome-terminal".to_string());
             let mut cmd = Command::new(resolved);
@@ -790,28 +837,32 @@ fn run_in_platform_terminal(
             }
         }
 
-        let candidates: &[(&str, &[&str])] = &[
-            ("konsole", &["-e"]),
-            ("alacritty", &["-e"]),
-            ("xterm", &["-e"]),
-        ];
-
-        for (bin, prefix_args) in candidates {
-            if !command_exists(bin) {
-                continue;
-            }
-            let resolved = resolve_command(bin).unwrap_or_else(|| (*bin).to_string());
-            let mut cmd = Command::new(resolved);
-            for arg in *prefix_args {
-                cmd.arg(arg);
-            }
-            cmd.args([&*user_shell, "-lc", &shell_command]);
-            if cmd.spawn().is_ok() {
-                return Ok(());
+        if forced.is_none() {
+            let candidates: &[(&str, &[&str])] = &[
+                ("konsole", &["-e"]),
+                ("alacritty", &["-e"]),
+                ("xterm", &["-e"]),
+            ];
+            for (bin, prefix_args) in candidates {
+                if !command_exists(bin) {
+                    continue;
+                }
+                let resolved = resolve_command(bin).unwrap_or_else(|| (*bin).to_string());
+                let mut cmd = Command::new(resolved);
+                for arg in *prefix_args {
+                    cmd.arg(arg);
+                }
+                cmd.args([&*user_shell, "-lc", &shell_command]);
+                if cmd.spawn().is_ok() {
+                    return Ok(());
+                }
             }
         }
 
-        Err("no terminal emulator found".to_string())
+        match forced {
+            Some(name) => Err(format!("{name} not found")),
+            None => Err("no terminal emulator found".to_string()),
+        }
     }
 }
 
