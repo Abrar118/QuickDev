@@ -36,11 +36,18 @@ fn surface_configuration(terminal: &ResolvedTerminal<'_>) -> String {
     let cwd = escape_applescript_string(terminal.cwd);
     let mut fields = vec![format!("initial working directory:\"{cwd}\"")];
     if let Some(command) = terminal.command {
+        // Type the command into the interactive shell (terminated with a
+        // carriage return) instead of using Ghostty's `command` field. The
+        // `command` field runs a one-shot program that exits immediately —
+        // with `wait after command` that just yields a "press any key to
+        // close" screen. `initial input` runs the command and leaves the user
+        // at a live prompt, matching the shell-wrapped CLI path. `return` is
+        // AppleScript's CR constant, concatenated outside the quotes so we
+        // don't have to encode a newline inside an AppleScript string literal.
         fields.push(format!(
-            "command:\"{}\"",
+            "initial input:\"{}\" & return",
             escape_applescript_string(command)
         ));
     }
-    fields.push("wait after command:true".to_string());
     fields.join(", ")
 }

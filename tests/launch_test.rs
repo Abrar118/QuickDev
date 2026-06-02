@@ -551,8 +551,11 @@ fn ghostty_applescript_builds_window_then_tabs_with_configuration() {
     assert!(script.contains("set w to new window with configuration c0"));
     assert!(script.contains("new tab in w with configuration c1"));
     assert!(script.contains("initial working directory:\"/Users/me/project\""));
-    assert!(script.contains("command:\"npm run dev\""));
-    assert!(script.contains("wait after command:true"));
+    // Commands are typed into the interactive shell, not run as a one-shot
+    // `command`, so the shell stays open afterward.
+    assert!(script.contains("initial input:\"npm run dev\" & return"));
+    assert!(!script.contains("wait after command"));
+    assert!(!script.contains("command:\"npm run dev\""));
 }
 
 #[test]
@@ -564,7 +567,7 @@ fn ghostty_applescript_escapes_paths_and_commands() {
     .unwrap();
 
     assert!(script.contains(r#"Quote \"Project\"/a\\b"#));
-    assert!(script.contains(r#"printf \"ok\\done\""#));
+    assert!(script.contains(r#"initial input:"printf \"ok\\done\"" & return"#));
 }
 
 #[test]
