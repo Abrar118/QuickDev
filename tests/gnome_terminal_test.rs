@@ -74,3 +74,41 @@ fn load_config_single_quotes_wrapper_path_with_spaces() {
     let conf = build_load_config(&tabs);
     assert!(conf.contains("Command=/bin/sh '/tmp/my path/tab0.sh'"));
 }
+
+#[cfg(target_os = "linux")]
+#[test]
+fn write_session_creates_executable_wrappers_and_conf() {
+    use quickdev::gnome_terminal::{write_session, GnomeTab};
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = std::env::temp_dir().join(format!("quickdev-test-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+
+    let tabs = [
+        GnomeTab {
+            title: "api",
+            cwd: "/tmp",
+            command: Some("echo hi"),
+        },
+        GnomeTab {
+            title: "web",
+            cwd: "/",
+            command: None,
+        },
+    ];
+    let conf = write_session(&dir, &tabs).unwrap();
+
+    assert!(conf.exists());
+    let conf_body = std::fs::read_to_string(&conf).unwrap();
+    assert!(conf_body.contains("Terminals=Terminal0;Terminal1;"));
+
+    let tab0 = dir.join("tab0.sh");
+    assert!(tab0.exists());
+    let mode = std::fs::metadata(&tab0).unwrap().permissions().mode();
+    assert_eq!(mode & 0o777, 0o755);
+    let body0 = std::fs::read_to_string(&tab0).unwrap();
+    assert!(body0.contains("cd '/tmp'"));
+    assert!(body0.contains("echo hi"));
+
+    std::fs::remove_dir_all(&dir).ok();
+}
