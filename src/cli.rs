@@ -112,7 +112,7 @@ Examples:
         /// Startup command to run in the terminal
         #[arg(long)]
         command: Option<String>,
-        /// Terminal emulator to use (ghostty, terminal, gnome-terminal, ptyxis). Omit for auto-detect.
+        /// Terminal emulator to use (ghostty, terminal, gnome-terminal, ptyxis, kitty). Omit for auto-detect.
         #[arg(long)]
         emulator: Option<String>,
     },
