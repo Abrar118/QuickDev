@@ -321,7 +321,8 @@ fn is_supported_emulator_accepts_known_only() {
     use quickdev::config::is_supported_emulator;
     assert!(is_supported_emulator("ghostty"));
     assert!(is_supported_emulator("terminal"));
-    assert!(!is_supported_emulator("kitty"));
+    assert!(is_supported_emulator("kitty"));
+    assert!(!is_supported_emulator("nonexistent-terminal"));
 }
 
 #[test]
