@@ -12,6 +12,8 @@ use std::path::Path;
 use crate::ghostty_applescript::{build_script as build_ghostty_script, ResolvedTerminal};
 #[cfg(target_os = "linux")]
 use crate::gnome_terminal::{launch_gnome_terminal_load_config, GnomeTab};
+#[cfg(target_os = "linux")]
+use crate::kitty::{launch_kitty_session, KittyTab};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::tab_strategy::{select_tab_strategy, TabCapabilities, TabStrategy};
 #[cfg(target_os = "macos")]
@@ -422,6 +424,17 @@ fn launch_terminal_tabs(
     {
         let caps = probe_linux_tab_capabilities();
         match select_tab_strategy(std::env::consts::OS, first_emulator, &caps) {
+            TabStrategy::KittySession => {
+                let tabs: Vec<KittyTab<'_>> = terminals
+                    .iter()
+                    .map(|t| KittyTab {
+                        title: &t.name,
+                        cwd: &t.path,
+                        command: t.command.as_deref(),
+                    })
+                    .collect();
+                launch_kitty_session(&tabs)
+            }
             TabStrategy::GnomeTerminalLoadConfig => {
                 let tabs: Vec<GnomeTab<'_>> = terminals
                     .iter()
@@ -450,6 +463,7 @@ fn probe_linux_tab_capabilities() -> TabCapabilities {
     TabCapabilities {
         ptyxis_available: command_exists("ptyxis"),
         gnome_terminal_available: command_exists("gnome-terminal"),
+        kitty_available: command_exists("kitty"),
         ..TabCapabilities::default()
     }
 }
@@ -676,7 +690,7 @@ fn launch_terminal(
         Some("terminal") => {
             return run_in_platform_terminal(resolved_path, command, tab_index, None)
         }
-        Some(forced @ ("gnome-terminal" | "ptyxis")) => {
+        Some(forced @ ("gnome-terminal" | "ptyxis" | "kitty")) => {
             return run_in_platform_terminal(resolved_path, command, tab_index, Some(forced))
         }
         Some(other) => return Err(format!("unknown emulator: {other}")),
@@ -811,8 +825,24 @@ fn run_in_platform_terminal(
             format!("cd '{escaped_cwd}' && {cmd_str}; exec {user_shell}")
         };
 
+        let try_kitty = forced.is_none() || forced == Some("kitty");
         let try_ptyxis = forced.is_none() || forced == Some("ptyxis");
         let try_gnome = forced.is_none() || forced == Some("gnome-terminal");
+
+        if try_kitty && command_exists("kitty") {
+            let resolved = resolve_command("kitty").unwrap_or_else(|| "kitty".to_string());
+            // kitty is not single-instance; each invocation is its own window.
+            // No `--` separator: program + args follow kitty's options directly.
+            if Command::new(resolved)
+                .args(["-d", cwd, &user_shell, "-lc", &shell_command])
+                .stdout(std::process::Stdio::null())
+                .stderr(std::process::Stdio::null())
+                .spawn()
+                .is_ok()
+            {
+                return Ok(());
+            }
+        }
 
         if try_ptyxis && command_exists("ptyxis") {
             let resolved = resolve_command("ptyxis").unwrap_or_else(|| "ptyxis".to_string());
