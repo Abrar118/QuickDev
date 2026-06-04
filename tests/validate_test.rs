@@ -51,13 +51,17 @@ fn escaping_terminal_path_is_error() {
 
 #[test]
 fn unsupported_emulator_is_error() {
-    let cfg = config("proj", vec![term("dev", ".", Some("kitty"))], vec![]);
+    let cfg = config(
+        "proj",
+        vec![term("dev", ".", Some("nonexistent-terminal"))],
+        vec![],
+    );
     let report = validate_project_config(&cfg, root());
     assert!(!report.is_ok());
     assert!(report
         .errors
         .iter()
-        .any(|e| e.contains("kitty") && e.contains("emulator")));
+        .any(|e| e.contains("nonexistent-terminal") && e.contains("emulator")));
 }
 
 #[test]
