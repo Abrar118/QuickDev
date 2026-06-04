@@ -14,9 +14,18 @@ fn single_tab_has_no_new_tab_line() {
 #[test]
 fn multiple_tabs_have_one_new_tab_per_extra_tab() {
     let tabs = [
-        SessionTab { title: "api", wrapper_path: "/tmp/qd/tab0.sh" },
-        SessionTab { title: "web", wrapper_path: "/tmp/qd/tab1.sh" },
-        SessionTab { title: "logs", wrapper_path: "/tmp/qd/tab2.sh" },
+        SessionTab {
+            title: "api",
+            wrapper_path: "/tmp/qd/tab0.sh",
+        },
+        SessionTab {
+            title: "web",
+            wrapper_path: "/tmp/qd/tab1.sh",
+        },
+        SessionTab {
+            title: "logs",
+            wrapper_path: "/tmp/qd/tab2.sh",
+        },
     ];
     let session = build_session(&tabs);
     // First tab is implicit: no leading new_tab.
@@ -87,8 +96,16 @@ fn write_session_creates_executable_wrappers_and_session_file() {
     std::fs::create_dir_all(&dir).unwrap();
 
     let tabs = [
-        KittyTab { title: "api", cwd: "/tmp", command: Some("echo hi") },
-        KittyTab { title: "web", cwd: "/", command: None },
+        KittyTab {
+            title: "api",
+            cwd: "/tmp",
+            command: Some("echo hi"),
+        },
+        KittyTab {
+            title: "web",
+            cwd: "/",
+            command: None,
+        },
     ];
     let session = write_session(&dir, &tabs).unwrap();
 
