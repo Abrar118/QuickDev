@@ -15,7 +15,7 @@ mod fzf;
 mod ghostty_applescript;
 #[cfg_attr(not(target_os = "linux"), allow(dead_code))]
 mod gnome_terminal;
-#[cfg_attr(not(target_os = "linux"), allow(dead_code))]
+#[allow(dead_code)]
 mod kitty;
 mod launch;
 mod models;

@@ -51,3 +51,69 @@ pub fn build_session(tabs: &[SessionTab<'_>]) -> String {
     }
     s
 }
+
+/// Write per-tab wrapper scripts and the session file into `dir`. Returns the
+/// session file path. Exposed for testing.
+#[cfg(target_os = "linux")]
+pub fn write_session(
+    dir: &std::path::Path,
+    tabs: &[KittyTab<'_>],
+) -> Result<std::path::PathBuf, String> {
+    use crate::gnome_terminal::build_wrapper_script;
+    use std::os::unix::fs::PermissionsExt;
+
+    let mut session_tabs: Vec<(String, String)> = Vec::with_capacity(tabs.len());
+    for (i, tab) in tabs.iter().enumerate() {
+        let wrapper_path = dir.join(format!("tab{i}.sh"));
+        let body = build_wrapper_script(tab.cwd, tab.command);
+        std::fs::write(&wrapper_path, body)
+            .map_err(|e| format!("failed to write wrapper script: {e}"))?;
+        std::fs::set_permissions(&wrapper_path, std::fs::Permissions::from_mode(0o755))
+            .map_err(|e| format!("failed to chmod wrapper script: {e}"))?;
+        session_tabs.push((
+            tab.title.to_string(),
+            wrapper_path.to_string_lossy().into_owned(),
+        ));
+    }
+
+    let session_tabs_ref: Vec<SessionTab<'_>> = session_tabs
+        .iter()
+        .map(|(title, path)| SessionTab {
+            title,
+            wrapper_path: path,
+        })
+        .collect();
+    let session_path = dir.join("session.kitty");
+    std::fs::write(&session_path, build_session(&session_tabs_ref))
+        .map_err(|e| format!("failed to write session file: {e}"))?;
+    Ok(session_path)
+}
+
+/// Open one kitty window with one tab per `tabs` entry via `--session`.
+///
+/// Fire-and-forget: kitty is a foreground/GUI process (unlike ln-terminal's
+/// client/server model), so `.output()` would block until the window closes.
+/// stdout/stderr are nulled to avoid macOS `SEL:` spam and tty coupling. `Err`
+/// is returned only when the binary cannot be spawned, so the caller falls back
+/// to per-window launches when kitty is missing.
+#[cfg(target_os = "linux")]
+pub fn launch_kitty_session(tabs: &[KittyTab<'_>]) -> Result<(), String> {
+    use crate::adapters::resolve_command;
+    use std::process::{Command, Stdio};
+
+    if tabs.is_empty() {
+        return Err("no terminals to launch".to_string());
+    }
+    let dir = std::env::temp_dir().join(format!("quickdev-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create temp dir: {e}"))?;
+    let session = write_session(&dir, tabs)?;
+
+    let resolved = resolve_command("kitty").ok_or("kitty not found".to_string())?;
+    Command::new(resolved)
+        .arg(format!("--session={}", session.display()))
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("kitty launch failed: {e}"))
+}
