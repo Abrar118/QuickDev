@@ -67,6 +67,7 @@ pub fn emulator_watch_process(
     emulator: Option<&str>,
     ghostty_available: bool,
     ptyxis_available: bool,
+    kitty_available: bool,
     os: &str,
 ) -> Option<&'static str> {
     match emulator {
@@ -74,16 +75,18 @@ pub fn emulator_watch_process(
         Some("terminal") => native_terminal_process(os, ptyxis_available),
         Some("gnome-terminal") if os == "linux" => Some("gnome-terminal-server"),
         Some("ptyxis") if os == "linux" => Some("ptyxis"),
+        // kitty (explicit) is not single-instance: no shared instance to wait
+        // on. Handled by the wildcard `Some(_) => None` arm below.
         Some(_) => None,
         None => {
-            // Mirror launch_terminal's auto-selection: an unspecified emulator
-            // only attempts Ghostty on macOS (the try_ghostty fallback is
-            // cfg-gated there). On other platforms None always resolves to the
-            // native terminal, so we must not watch Ghostty even when its
-            // binary is installed — otherwise we'd poll a process we never
-            // launch while Ptyxis/gnome-terminal actually cold-starts.
+            // Mirror launch_terminal's auto-selection. On macOS, an unspecified
+            // emulator only attempts Ghostty. On Linux, auto-detect prefers
+            // kitty (not single-instance → no readiness wait). Otherwise fall to
+            // the native terminal. We must not watch a process we never launch.
             if os == "macos" && ghostty_available {
                 Some("ghostty")
+            } else if os == "linux" && kitty_available {
+                None
             } else {
                 native_terminal_process(os, ptyxis_available)
             }
@@ -265,10 +268,12 @@ pub fn launch_project(
         .map(command_exists)
         .unwrap_or(false);
     let ptyxis_available = command_exists("ptyxis");
+    let kitty_available = command_exists("kitty");
     let watch = emulator_watch_process(
         first_emulator,
         ghostty_available,
         ptyxis_available,
+        kitty_available,
         std::env::consts::OS,
     );
     let emulator_was_running = watch.map(process_running).unwrap_or(true);
