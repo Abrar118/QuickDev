@@ -24,11 +24,26 @@ pub fn escape_session_value(value: &str) -> String {
     value.replace('\'', "'\\''")
 }
 
+/// Strip characters that would let a title break out of its session-file line.
+///
+/// kitty parses the session file line-by-line, so a newline or carriage return
+/// embedded in a title (e.g. from a hostile `.quickdev.toml`) could inject extra
+/// directives such as a rogue `launch`. There is no line-continuation escape in
+/// the session format, so control characters cannot be encoded — we drop them.
+/// Titles are cosmetic, so stripping is preferable to failing the launch.
+pub fn sanitize_title(title: &str) -> String {
+    title.chars().filter(|c| !c.is_control()).collect()
+}
+
 /// Build a kitty session file: one OS window, one tab per entry.
 ///
 /// The first tab is implicit — kitty already opens a tab for the first `launch`,
 /// so emitting a leading `new_tab` would create an empty extra tab. Each
 /// subsequent tab is introduced with `new_tab <title>`.
+///
+/// Titles are sanitized of control characters ([`sanitize_title`]) so a title
+/// cannot break out of its directive line; the `--title` value is additionally
+/// single-quote escaped, while `new_tab` takes the rest of the line literally.
 ///
 /// # Precondition
 ///
@@ -38,14 +53,15 @@ pub fn escape_session_value(value: &str) -> String {
 pub fn build_session(tabs: &[SessionTab<'_>]) -> String {
     let mut s = String::new();
     for (i, tab) in tabs.iter().enumerate() {
+        let title = sanitize_title(tab.title);
         if i == 0 {
             s.push_str(&format!(
                 "launch --title '{}' /bin/sh '{}'\n",
-                escape_session_value(tab.title),
+                escape_session_value(&title),
                 tab.wrapper_path
             ));
         } else {
-            s.push_str(&format!("new_tab {}\n", tab.title));
+            s.push_str(&format!("new_tab {}\n", title));
             s.push_str(&format!("launch /bin/sh '{}'\n", tab.wrapper_path));
         }
     }

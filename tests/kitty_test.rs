@@ -1,4 +1,4 @@
-use quickdev::kitty::{build_session, escape_session_value, SessionTab};
+use quickdev::kitty::{build_session, escape_session_value, sanitize_title, SessionTab};
 
 #[test]
 fn single_tab_has_no_new_tab_line() {
@@ -42,6 +42,39 @@ fn first_tab_title_single_quotes_are_escaped() {
 fn escape_session_value_doubles_single_quotes() {
     assert_eq!(escape_session_value("a'b"), "a'\\''b");
     assert_eq!(escape_session_value("plain"), "plain");
+}
+
+#[test]
+fn sanitize_title_strips_control_characters() {
+    assert_eq!(sanitize_title("api\nlogs"), "apilogs");
+    assert_eq!(sanitize_title("a\r\nb\tc"), "abc");
+    assert_eq!(sanitize_title("normal name"), "normal name");
+}
+
+#[test]
+fn titles_cannot_inject_session_directives_via_newline() {
+    // A hostile title attempting to inject an extra `launch` directive must be
+    // neutralized: the newline is stripped, so the payload collapses into the
+    // (harmless) title text on a single line and no standalone injected
+    // directive line is emitted.
+    let tabs = [
+        SessionTab {
+            title: "first\nlaunch /bin/sh '/evil.sh'",
+            wrapper_path: "/tmp/qd/tab0.sh",
+        },
+        SessionTab {
+            title: "second\nlaunch /bin/sh '/evil.sh'",
+            wrapper_path: "/tmp/qd/tab1.sh",
+        },
+    ];
+    let session = build_session(&tabs);
+    // Two tabs produce exactly three lines: tab0's launch, tab1's new_tab, and
+    // tab1's launch. A surviving newline would inflate this count.
+    assert_eq!(session.lines().count(), 3);
+    // No line is the injected directive standing on its own.
+    assert!(!session
+        .lines()
+        .any(|line| line.trim() == "launch /bin/sh '/evil.sh'"));
 }
 
 #[cfg(target_os = "linux")]
