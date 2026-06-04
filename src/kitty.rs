@@ -107,7 +107,7 @@ pub fn write_session(
 
 /// Open one kitty window with one tab per `tabs` entry via `--session`.
 ///
-/// Fire-and-forget: kitty is a foreground/GUI process (unlike ln-terminal's
+/// Fire-and-forget: kitty is a foreground/GUI process (unlike gnome-terminal's
 /// client/server model), so `.output()` would block until the window closes.
 /// stdout/stderr are nulled to avoid macOS `SEL:` spam and tty coupling. `Err`
 /// is returned only when the binary cannot be spawned, so the caller falls back
