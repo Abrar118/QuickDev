@@ -4,6 +4,7 @@ pub enum TabStrategy {
     AppleScriptTab,
     TerminalAppTab,
     GnomeTerminalLoadConfig,
+    KittySession,
     WindowOnly,
 }
 
@@ -17,6 +18,7 @@ pub struct TabCapabilities {
     pub ghostty_applescript: bool,
     pub ptyxis_available: bool,
     pub gnome_terminal_available: bool,
+    pub kitty_available: bool,
     pub wt_available: bool,
 }
 
@@ -41,14 +43,19 @@ pub fn select_tab_strategy(
             _ => TabStrategy::WindowOnly,
         },
         "linux" => match emulator {
+            // kitty is preferred on Linux: a `--session` file opens one window
+            // with per-tab dir+command. Checked before ptyxis/gnome-terminal.
+            Some("kitty") if caps.kitty_available => TabStrategy::KittySession,
+            Some("kitty") => TabStrategy::WindowOnly,
             Some("gnome-terminal") if caps.gnome_terminal_available => {
                 TabStrategy::GnomeTerminalLoadConfig
             }
             Some("gnome-terminal") => TabStrategy::WindowOnly,
             // Explicit Ptyxis/Ghostty open windows (no single-window CLI tabs).
             Some("ptyxis") | Some("ghostty") => TabStrategy::WindowOnly,
-            // Auto: never silently prefer gnome-terminal over Ptyxis. Only tab
-            // when gnome-terminal is the terminal that will actually be used.
+            // Auto: kitty first, then never silently prefer gnome-terminal over
+            // Ptyxis. Only tab when gnome-terminal is the terminal actually used.
+            Some("terminal") | None if caps.kitty_available => TabStrategy::KittySession,
             Some("terminal") | None if caps.ptyxis_available => TabStrategy::WindowOnly,
             Some("terminal") | None if caps.gnome_terminal_available => {
                 TabStrategy::GnomeTerminalLoadConfig

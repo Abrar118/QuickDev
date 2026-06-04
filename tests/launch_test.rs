@@ -16,18 +16,18 @@ use std::path::Path;
 fn watch_process_prefers_ghostty_only_on_macos_for_unspecified_emulator() {
     // None + ghostty installed: macOS attempts Ghostty first, so we watch it.
     assert_eq!(
-        emulator_watch_process(None, true, false, "macos"),
+        emulator_watch_process(None, true, false, false, "macos"),
         Some("ghostty")
     );
     // Linux never auto-launches Ghostty for an unspecified emulator
     // (try_ghostty is macOS-gated), so we watch the native terminal even when
     // the ghostty binary is present — and honor the ptyxis preference.
     assert_eq!(
-        emulator_watch_process(None, true, false, "linux"),
+        emulator_watch_process(None, true, false, false, "linux"),
         Some("gnome-terminal-server")
     );
     assert_eq!(
-        emulator_watch_process(None, true, true, "linux"),
+        emulator_watch_process(None, true, true, false, "linux"),
         Some("ptyxis")
     );
 }
@@ -35,15 +35,15 @@ fn watch_process_prefers_ghostty_only_on_macos_for_unspecified_emulator() {
 #[test]
 fn watch_process_falls_back_to_native_when_no_ghostty() {
     assert_eq!(
-        emulator_watch_process(None, false, false, "macos"),
+        emulator_watch_process(None, false, false, false, "macos"),
         Some("Terminal")
     );
     assert_eq!(
-        emulator_watch_process(None, false, false, "linux"),
+        emulator_watch_process(None, false, false, false, "linux"),
         Some("gnome-terminal-server")
     );
     assert_eq!(
-        emulator_watch_process(None, false, false, "windows"),
+        emulator_watch_process(None, false, false, false, "windows"),
         Some("WindowsTerminal.exe")
     );
 }
@@ -51,7 +51,7 @@ fn watch_process_falls_back_to_native_when_no_ghostty() {
 #[test]
 fn watch_process_prefers_ptyxis_on_linux_when_available() {
     assert_eq!(
-        emulator_watch_process(None, false, true, "linux"),
+        emulator_watch_process(None, false, true, false, "linux"),
         Some("ptyxis")
     );
 }
@@ -60,16 +60,16 @@ fn watch_process_prefers_ptyxis_on_linux_when_available() {
 fn watch_process_honors_explicit_emulator() {
     // Explicit ghostty is watched on every platform (not cfg-gated).
     assert_eq!(
-        emulator_watch_process(Some("ghostty"), false, false, "linux"),
+        emulator_watch_process(Some("ghostty"), false, false, false, "linux"),
         Some("ghostty")
     );
     assert_eq!(
-        emulator_watch_process(Some("terminal"), false, false, "macos"),
+        emulator_watch_process(Some("terminal"), false, false, false, "macos"),
         Some("Terminal")
     );
     // Explicit terminal on Linux honors the ptyxis preference too.
     assert_eq!(
-        emulator_watch_process(Some("terminal"), false, true, "linux"),
+        emulator_watch_process(Some("terminal"), false, true, false, "linux"),
         Some("ptyxis")
     );
 }
@@ -77,7 +77,7 @@ fn watch_process_honors_explicit_emulator() {
 #[test]
 fn watch_process_unknown_emulator_is_none() {
     assert_eq!(
-        emulator_watch_process(Some("kitty"), true, false, "linux"),
+        emulator_watch_process(Some("kitty"), true, false, false, "linux"),
         None
     );
 }
@@ -85,11 +85,11 @@ fn watch_process_unknown_emulator_is_none() {
 #[test]
 fn watch_process_for_explicit_gnome_terminal() {
     assert_eq!(
-        emulator_watch_process(Some("gnome-terminal"), false, false, "linux"),
+        emulator_watch_process(Some("gnome-terminal"), false, false, false, "linux"),
         Some("gnome-terminal-server")
     );
     assert_eq!(
-        emulator_watch_process(Some("gnome-terminal"), false, false, "macos"),
+        emulator_watch_process(Some("gnome-terminal"), false, false, false, "macos"),
         None
     );
 }
@@ -97,11 +97,11 @@ fn watch_process_for_explicit_gnome_terminal() {
 #[test]
 fn watch_process_for_explicit_ptyxis() {
     assert_eq!(
-        emulator_watch_process(Some("ptyxis"), false, true, "linux"),
+        emulator_watch_process(Some("ptyxis"), false, true, false, "linux"),
         Some("ptyxis")
     );
     assert_eq!(
-        emulator_watch_process(Some("ptyxis"), false, false, "windows"),
+        emulator_watch_process(Some("ptyxis"), false, false, false, "windows"),
         None
     );
 }
@@ -469,6 +469,7 @@ fn tab_strategy_selects_macos_ghostty_applescript_when_supported() {
         ghostty_applescript: true,
         ptyxis_available: false,
         gnome_terminal_available: false,
+        kitty_available: false,
         wt_available: false,
     };
 
@@ -491,6 +492,7 @@ fn tab_strategy_rejects_macos_ghostty_without_applescript_support() {
         ghostty_applescript: true,
         ptyxis_available: false,
         gnome_terminal_available: false,
+        kitty_available: false,
         wt_available: false,
     };
 
@@ -550,6 +552,7 @@ fn tab_strategy_linux_ptyxis_present_auto_is_window_only() {
         ghostty_applescript: false,
         ptyxis_available: true,
         gnome_terminal_available: true,
+        kitty_available: false,
         wt_available: false,
     };
 
@@ -702,5 +705,52 @@ fn linux_no_terminals_is_window_only() {
     assert_eq!(
         select_tab_strategy("linux", None, &caps),
         TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn linux_kitty_explicit_uses_session() {
+    let caps = TabCapabilities {
+        kitty_available: true,
+        gnome_terminal_available: true,
+        ptyxis_available: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", Some("kitty"), &caps),
+        TabStrategy::KittySession
+    );
+}
+
+#[test]
+fn linux_kitty_explicit_without_binary_is_window_only() {
+    let caps = TabCapabilities::default();
+    assert_eq!(
+        select_tab_strategy("linux", Some("kitty"), &caps),
+        TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn linux_auto_prefers_kitty_over_ptyxis_and_gnome() {
+    let caps = TabCapabilities {
+        kitty_available: true,
+        gnome_terminal_available: true,
+        ptyxis_available: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", None, &caps),
+        TabStrategy::KittySession
+    );
+}
+
+#[test]
+fn watch_process_auto_kitty_on_linux_is_none() {
+    // kitty available, no ghostty; auto-detect prefers kitty, which is not
+    // single-instance, so there is no readiness proxy to wait on.
+    assert_eq!(
+        emulator_watch_process(None, false, true, true, "linux"),
+        None
     );
 }

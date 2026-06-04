@@ -321,7 +321,8 @@ fn is_supported_emulator_accepts_known_only() {
     use quickdev::config::is_supported_emulator;
     assert!(is_supported_emulator("ghostty"));
     assert!(is_supported_emulator("terminal"));
-    assert!(!is_supported_emulator("kitty"));
+    assert!(is_supported_emulator("kitty"));
+    assert!(!is_supported_emulator("nonexistent-terminal"));
 }
 
 #[test]
@@ -376,7 +377,7 @@ fn set_global_setting_rejects_bad_value_and_unknown_key() {
         terminal_app_tabbing_prompt_declined: false,
         projects: vec![],
     };
-    assert!(set_global_setting(&mut config, "emulator", "kitty").is_err());
+    assert!(set_global_setting(&mut config, "emulator", "nonexistent-terminal").is_err());
     assert!(set_global_setting(&mut config, "theme", "dark").is_err());
     assert!(config.emulator.is_none());
 }

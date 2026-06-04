@@ -135,7 +135,8 @@ pub fn parse_project_selection(selected: &str) -> Result<usize, String> {
         .ok_or_else(|| "invalid selection".to_string())
 }
 
-pub const SUPPORTED_EMULATORS: &[&str] = &["ghostty", "terminal", "gnome-terminal", "ptyxis"];
+pub const SUPPORTED_EMULATORS: &[&str] =
+    &["ghostty", "terminal", "gnome-terminal", "ptyxis", "kitty"];
 
 pub fn is_supported_emulator(value: &str) -> bool {
     SUPPORTED_EMULATORS.contains(&value)
