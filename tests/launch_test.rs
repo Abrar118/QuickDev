@@ -469,6 +469,7 @@ fn tab_strategy_selects_macos_ghostty_applescript_when_supported() {
         ghostty_applescript: true,
         ptyxis_available: false,
         gnome_terminal_available: false,
+        kitty_available: false,
         wt_available: false,
     };
 
@@ -491,6 +492,7 @@ fn tab_strategy_rejects_macos_ghostty_without_applescript_support() {
         ghostty_applescript: true,
         ptyxis_available: false,
         gnome_terminal_available: false,
+        kitty_available: false,
         wt_available: false,
     };
 
@@ -550,6 +552,7 @@ fn tab_strategy_linux_ptyxis_present_auto_is_window_only() {
         ghostty_applescript: false,
         ptyxis_available: true,
         gnome_terminal_available: true,
+        kitty_available: false,
         wt_available: false,
     };
 
@@ -702,5 +705,42 @@ fn linux_no_terminals_is_window_only() {
     assert_eq!(
         select_tab_strategy("linux", None, &caps),
         TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn linux_kitty_explicit_uses_session() {
+    let caps = TabCapabilities {
+        kitty_available: true,
+        gnome_terminal_available: true,
+        ptyxis_available: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", Some("kitty"), &caps),
+        TabStrategy::KittySession
+    );
+}
+
+#[test]
+fn linux_kitty_explicit_without_binary_is_window_only() {
+    let caps = TabCapabilities::default();
+    assert_eq!(
+        select_tab_strategy("linux", Some("kitty"), &caps),
+        TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn linux_auto_prefers_kitty_over_ptyxis_and_gnome() {
+    let caps = TabCapabilities {
+        kitty_available: true,
+        gnome_terminal_available: true,
+        ptyxis_available: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("linux", None, &caps),
+        TabStrategy::KittySession
     );
 }

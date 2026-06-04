@@ -413,6 +413,7 @@ fn launch_terminal_tabs(
             TabStrategy::TerminalAppTab => launch_terminal_app_tabs(terminals),
             TabStrategy::CliTab
             | TabStrategy::GnomeTerminalLoadConfig
+            | TabStrategy::KittySession
             | TabStrategy::WindowOnly => Err("unsupported tab emulator".to_string()),
         }
     }
@@ -461,6 +462,7 @@ fn probe_tab_capabilities() -> TabCapabilities {
         ghostty_applescript: ghostty_applescript_enabled(),
         ptyxis_available: command_exists("ptyxis"),
         gnome_terminal_available: command_exists("gnome-terminal"),
+        kitty_available: false,
         wt_available: command_exists("wt"),
     }
 }
