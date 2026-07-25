@@ -4,7 +4,7 @@
 
 | Version | Supported |
 |---------|-----------|
-| 0.1.x   | Yes       |
+| 0.4.x   | Yes       |
 
 Only the latest release on the `master` branch receives security updates.
 
@@ -51,15 +51,22 @@ If you discover a security vulnerability in QuickDev, please report it responsib
 QuickDev is a local CLI tool that spawns processes on the user's machine. Security concerns include:
 
 - **Command injection** via `.quickdev.toml` fields (path, command, args). QuickDev passes these values to `std::process::Command` which does not invoke a shell for application launches, mitigating injection risks. Terminal commands are executed via shell (`sh -lc` / `zsh -lc`) by design, since they are user-authored.
-- **Path traversal** in terminal `path` fields. Paths are resolved relative to the project root. Absolute paths are used as-is.
+- **Path traversal** in terminal `path` fields. Paths are resolved relative to the project root, and must name an existing directory. Absolute paths and `..` components are rejected. Note that this containment is *lexical*: a symlink inside the project that points elsewhere is followed, so a terminal can open outside the project root. This is not a sandbox — terminal `command` values are arbitrary shell by design (see below) — and should not be relied on as one.
 - **Config file trust.** QuickDev executes commands defined in `.quickdev.toml`. Only use configs from repositories you trust. Review `.quickdev.toml` before running `quickdev launch` on cloned projects.
+- **Temporary session files.** Grouped (tabbed) launches on kitty and gnome-terminal write per-tab wrapper scripts to a randomly-named, owner-only (`0700`) temporary directory. These files contain your terminal `command` values, outlive the process because the terminal reads them asynchronously, and are removed on a later launch.
 
 ## Dependencies
 
 QuickDev has minimal dependencies:
 
 - `clap` — CLI argument parsing
-- `serde` + `toml` — configuration serialization
+- `serde` + `toml` + `toml_edit` — configuration parsing and comment-preserving writes
 - `dirs` — home directory resolution
+- `shell-words` — POSIX-style splitting of user-supplied argument strings
+- `tempfile` — atomic config writes and owner-only session directories
+- `lnk` (Windows only) — reading Start Menu shortcuts during app discovery
 
-No network access, no remote code execution, no telemetry.
+The CLI itself performs no network access and has no telemetry. The optional
+npm distribution (`@panda-orion/quickdev`) does: its `postinstall` step
+downloads the matching release binary from GitHub over HTTPS and verifies it
+against the published SHA-256 checksum before use.
