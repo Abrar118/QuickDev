@@ -94,3 +94,86 @@ fn unknown_placeholder_is_warning() {
     // a known placeholder must NOT be flagged
     assert!(!report.warnings.iter().any(|w| w.contains("{root}")));
 }
+
+#[test]
+fn validate_terminal_entry_rejects_configs_quickdev_would_later_refuse() {
+    use quickdev::models::TerminalEntry;
+    use quickdev::validate::validate_terminal_entry;
+
+    let root = std::path::Path::new("/tmp/project");
+    let ok = TerminalEntry {
+        name: "api".to_string(),
+        path: "./api".to_string(),
+        command: None,
+        emulator: Some("kitty".to_string()),
+    };
+    assert!(validate_terminal_entry(&ok, root).is_ok());
+
+    let blank_name = TerminalEntry {
+        name: "   ".to_string(),
+        path: ".".to_string(),
+        command: None,
+        emulator: None,
+    };
+    assert!(validate_terminal_entry(&blank_name, root)
+        .unwrap_err()
+        .contains("cannot be empty"));
+
+    // A newline would forge an extra row in the one-item-per-line fzf picker.
+    let newline_name = TerminalEntry {
+        name: "api\nweb".to_string(),
+        path: ".".to_string(),
+        command: None,
+        emulator: None,
+    };
+    assert!(validate_terminal_entry(&newline_name, root)
+        .unwrap_err()
+        .contains("control characters"));
+
+    let bad_emulator = TerminalEntry {
+        name: "api".to_string(),
+        path: ".".to_string(),
+        command: None,
+        emulator: Some("nonexistent-terminal".to_string()),
+    };
+    assert!(validate_terminal_entry(&bad_emulator, root)
+        .unwrap_err()
+        .contains("unsupported emulator"));
+
+    let escaping = TerminalEntry {
+        name: "api".to_string(),
+        path: "../outside".to_string(),
+        command: None,
+        emulator: None,
+    };
+    assert!(validate_terminal_entry(&escaping, root)
+        .unwrap_err()
+        .contains("must stay inside the project root"));
+}
+
+#[test]
+fn validate_app_entry_requires_a_usable_name_and_path() {
+    use quickdev::models::AppEntry;
+    use quickdev::validate::validate_app_entry;
+
+    assert!(validate_app_entry(&AppEntry {
+        name: "Cursor".to_string(),
+        path: "/Applications/Cursor.app".to_string(),
+        args: None,
+    })
+    .is_ok());
+
+    assert!(validate_app_entry(&AppEntry {
+        name: String::new(),
+        path: "/Applications/Cursor.app".to_string(),
+        args: None,
+    })
+    .is_err());
+
+    assert!(validate_app_entry(&AppEntry {
+        name: "Cursor".to_string(),
+        path: "  ".to_string(),
+        args: None,
+    })
+    .is_err());
+}

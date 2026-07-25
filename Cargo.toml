@@ -19,6 +19,7 @@ toml = "0.8"
 dirs = "6"
 shell-words = "1"
 tempfile = "3"
+toml_edit = "0.22"
 
 [target.'cfg(windows)'.dependencies]
 lnk = "0.5"

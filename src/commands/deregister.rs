@@ -22,16 +22,19 @@ pub(crate) fn cmd_deregister(delete: bool) -> Result<(), String> {
         return Err("project not found in global index".to_string());
     }
 
-    save_global_config(&global_path, &global)?;
-
     if delete {
+        // Delete before deregistering. The reverse order leaves the project
+        // unregistered but its .quickdev.toml still on disk if the delete fails,
+        // which `quickdev init` then refuses to recreate.
         std::fs::remove_file(&config_path)
             .map_err(|e| format!("failed to delete {}: {e}", config_path.display()))?;
+        save_global_config(&global_path, &global)?;
         println!(
             "Deregistered and deleted config for '{}'",
             removed_name.unwrap_or_default()
         );
     } else {
+        save_global_config(&global_path, &global)?;
         println!(
             "Deregistered project '{}'",
             removed_name.unwrap_or_default()

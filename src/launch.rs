@@ -243,12 +243,15 @@ fn app_detail(path: &str, args: Option<&[String]>) -> String {
 }
 
 /// Resolve what `launch_project` would launch, without spawning anything.
-/// Terminals that fail path resolution (e.g. escaping the project root) are
-/// returned as failures; everything else is a success carrying its `detail`.
+///
+/// Applies the same checks the real launch does — a terminal path must resolve
+/// to a directory inside the project, and an application must exist on disk or
+/// be a command on `PATH` — so a dry run reports the failures a launch would hit
+/// rather than a blanket success.
 pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchResult> {
     let mut results = Vec::new();
     for terminal in &config.terminals {
-        match resolve_terminal_path(project_root, &terminal.path) {
+        match resolve_existing_terminal_path(project_root, &terminal.path) {
             Ok(resolved_path) => results.push(LaunchResult {
                 label: terminal.name.clone(),
                 kind: "terminal",
@@ -274,11 +277,17 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
             .map(|a| resolve_app_args(a, &placeholder_ctx));
         let effective_args =
             effective_app_args(&app.name, &app.path, resolved_args.as_deref(), &root_str);
+        let launchable = crate::validate::app_target_resolvable(&app.path);
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
-            success: true,
-            error: None,
+            success: launchable,
+            error: (!launchable).then(|| {
+                format!(
+                    "path does not exist and is not on PATH: {}",
+                    app.path.clone()
+                )
+            }),
             detail: Some(app_detail(&app.path, effective_args.as_deref())),
         });
     }
@@ -674,7 +683,7 @@ fn run_osascript(script: &str, what: &str) -> Result<(), TabLaunchFailure> {
     )))
 }
 
-/// Resolve a terminal's configured path and confirm the directory is on disk.
+/// Resolve a terminal's configured path and confirm it is a directory on disk.
 ///
 /// Grouped (tabbed) launches hand every directory to the emulator in a single
 /// invocation, so there is no per-terminal error to observe: a missing directory
@@ -686,8 +695,15 @@ pub fn resolve_existing_terminal_path(
     relative_path: &str,
 ) -> Result<String, String> {
     let resolved = resolve_terminal_path(project_root, relative_path)?;
-    if !Path::new(&resolved).exists() {
+    let target = Path::new(&resolved);
+    if !target.exists() {
         return Err(format!("path not found: {resolved}"));
+    }
+    // A terminal's path becomes the tab's working directory, so a regular file
+    // is never usable — accepting it only defers the failure to the tab's `cd`,
+    // where a grouped launch cannot observe it.
+    if !target.is_dir() {
+        return Err(format!("path is not a directory: {resolved}"));
     }
     Ok(resolved)
 }

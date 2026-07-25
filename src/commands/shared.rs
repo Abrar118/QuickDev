@@ -9,43 +9,124 @@ pub(crate) fn prompt(message: &str) -> Result<String, String> {
     Ok(input.trim().to_string())
 }
 
+/// Strip characters that would break the one-item-per-line picker protocol.
+/// Names in existing configs predate validation, so display is defensive.
+fn one_line(value: &str) -> String {
+    value.chars().filter(|c| !c.is_control()).collect()
+}
+
+/// Picker rows for every terminal then every application, in config order.
+///
+/// The row's position is what identifies it — see [`selected_items`]. Terminals
+/// occupy positions `0..terminals.len()`, applications follow.
 pub(crate) fn build_item_display_list(config: &ProjectConfig) -> Vec<String> {
     let mut items = Vec::new();
     for t in &config.terminals {
         let cmd_part = t
             .command
             .as_ref()
-            .map(|c| format!(" ({c})"))
+            .map(|c| format!(" ({})", one_line(c)))
             .unwrap_or_default();
-        items.push(format!("[terminal] {} — {}{}", t.name, t.path, cmd_part));
+        items.push(format!(
+            "[terminal] {} — {}{}",
+            one_line(&t.name),
+            one_line(&t.path),
+            cmd_part
+        ));
     }
     for a in &config.applications {
-        items.push(format!("[app] {} — {}", a.name, a.path));
+        items.push(format!(
+            "[app] {} — {}",
+            one_line(&a.name),
+            one_line(&a.path)
+        ));
     }
     items
 }
 
-pub(crate) fn parse_selected_items(selected: &[String]) -> (Vec<String>, Vec<String>) {
-    let mut terminal_names = Vec::new();
-    let mut app_names = Vec::new();
+/// Split picker positions back into terminal and application indices.
+///
+/// Positions come from fzf's hidden index column rather than the visible text:
+/// a name containing the display separator (` — `) never round-tripped through
+/// string splitting, so such an item could not be launched or removed.
+pub(crate) fn selected_items(
+    config: &ProjectConfig,
+    positions: &[usize],
+) -> (Vec<usize>, Vec<usize>) {
+    let boundary = config.terminals.len();
+    let mut terminals = Vec::new();
+    let mut apps = Vec::new();
+    for &position in positions {
+        if position < boundary {
+            terminals.push(position);
+        } else {
+            apps.push(position - boundary);
+        }
+    }
+    (terminals, apps)
+}
 
-    for line in selected {
-        if line.starts_with("[terminal] ") {
-            let name = line
-                .strip_prefix("[terminal] ")
-                .and_then(|s| s.split(" — ").next())
-                .unwrap_or("")
-                .to_string();
-            terminal_names.push(name);
-        } else if line.starts_with("[app] ") {
-            let name = line
-                .strip_prefix("[app] ")
-                .and_then(|s| s.split(" — ").next())
-                .unwrap_or("")
-                .to_string();
-            app_names.push(name);
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{AppEntry, ProjectEntry, TerminalEntry};
+
+    fn config() -> ProjectConfig {
+        ProjectConfig {
+            project: ProjectEntry {
+                name: "p".to_string(),
+            },
+            terminals: vec![
+                TerminalEntry {
+                    name: "api".to_string(),
+                    path: ".".to_string(),
+                    command: None,
+                    emulator: None,
+                },
+                TerminalEntry {
+                    name: "web".to_string(),
+                    path: "./web".to_string(),
+                    command: None,
+                    emulator: None,
+                },
+            ],
+            applications: vec![AppEntry {
+                name: "Cursor".to_string(),
+                path: "/Applications/Cursor.app".to_string(),
+                args: None,
+            }],
         }
     }
 
-    (terminal_names, app_names)
+    #[test]
+    fn positions_split_at_the_terminal_application_boundary() {
+        let config = config();
+        assert_eq!(selected_items(&config, &[0, 2]), (vec![0], vec![0]));
+        assert_eq!(selected_items(&config, &[1]), (vec![1], vec![]));
+        assert_eq!(selected_items(&config, &[]), (vec![], vec![]));
+    }
+
+    #[test]
+    fn names_containing_the_display_separator_still_round_trip() {
+        // " — " is the visible separator; the old parser split on it and lost
+        // everything after the first occurrence in a name.
+        let mut config = config();
+        config.terminals[0].name = "api — v2".to_string();
+
+        let items = build_item_display_list(&config);
+        assert!(items[0].starts_with("[terminal] api — v2 — ."));
+        // Selection is by position, so the name's content is irrelevant.
+        assert_eq!(selected_items(&config, &[0]), (vec![0], vec![]));
+    }
+
+    #[test]
+    fn display_rows_never_contain_control_characters() {
+        let mut config = config();
+        config.terminals[0].name = "api\nlaunch evil".to_string();
+
+        let items = build_item_display_list(&config);
+        assert_eq!(items.len(), 3, "one row per configured item");
+        assert!(!items[0].contains('\n'));
+        assert!(items[0].contains("apilaunch evil"));
+    }
 }

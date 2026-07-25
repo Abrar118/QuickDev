@@ -381,3 +381,137 @@ fn set_global_setting_rejects_bad_value_and_unknown_key() {
     assert!(set_global_setting(&mut config, "theme", "dark").is_err());
     assert!(config.emulator.is_none());
 }
+
+#[test]
+fn rewriting_a_project_config_keeps_comments_and_unmodelled_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    fs::write(
+        &config_path,
+        r#"# my own notes about this project
+[project]
+name = "demo"
+
+[[terminals]]
+# the API server, do not remove
+name = "api"
+path = "./api"
+written_by_a_newer_quickdev = "keep me"
+"#,
+    )
+    .unwrap();
+
+    let mut config = load_project_config(&config_path).unwrap();
+    config.terminals.push(TerminalEntry {
+        name: "web".to_string(),
+        path: "./web".to_string(),
+        command: Some("npm run dev".to_string()),
+        emulator: None,
+    });
+    save_project_config(&config_path, &config).unwrap();
+
+    let content = fs::read_to_string(&config_path).unwrap();
+    assert!(content.starts_with("# my own notes about this project"));
+    assert!(content.contains("# the API server, do not remove"));
+    assert!(
+        content.contains("written_by_a_newer_quickdev = \"keep me\""),
+        "a key this build does not model must survive a rewrite: {content}"
+    );
+    // And the new terminal actually landed.
+    let reloaded = load_project_config(&config_path).unwrap();
+    assert_eq!(reloaded.terminals.len(), 2);
+    assert_eq!(reloaded.terminals[1].name, "web");
+    assert_eq!(
+        reloaded.terminals[1].command.as_deref(),
+        Some("npm run dev")
+    );
+}
+
+#[test]
+fn removing_an_optional_field_clears_it_from_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    fs::write(
+        &config_path,
+        "[project]\nname = \"demo\"\n\n[[terminals]]\nname = \"api\"\npath = \".\"\ncommand = \"echo hi\"\n",
+    )
+    .unwrap();
+
+    let mut config = load_project_config(&config_path).unwrap();
+    config.terminals[0].command = None;
+    save_project_config(&config_path, &config).unwrap();
+
+    let content = fs::read_to_string(&config_path).unwrap();
+    assert!(
+        !content.contains("command"),
+        "stale key left behind: {content}"
+    );
+    assert!(load_project_config(&config_path).unwrap().terminals[0]
+        .command
+        .is_none());
+}
+
+#[test]
+fn adding_a_top_level_key_to_a_global_config_with_projects_stays_valid_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+
+    // A global config whose only content is an array-of-tables. A naive rewrite
+    // would append `emulator = ...` after `[[projects]]`, silently making it a
+    // key of the last project instead of a top-level setting.
+    fs::write(
+        &path,
+        "terminal_app_tabbing_prompt_declined = false\n\n[[projects]]\nname = \"demo\"\npath = \"/tmp/demo\"\n",
+    )
+    .unwrap();
+
+    let mut global = load_global_config(&path).unwrap();
+    global.emulator = Some("kitty".to_string());
+    save_global_config(&path, &global).unwrap();
+
+    let reloaded = load_global_config(&path).unwrap();
+    assert_eq!(reloaded.emulator.as_deref(), Some("kitty"));
+    assert_eq!(reloaded.projects.len(), 1);
+    assert_eq!(reloaded.projects[0].name, "demo");
+}
+
+#[test]
+fn saving_over_an_unparseable_config_refuses_rather_than_destroying_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+    let broken = "[project\nname = \"demo\"\n";
+    fs::write(&config_path, broken).unwrap();
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "demo".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    assert!(save_project_config(&config_path, &config).is_err());
+    assert_eq!(fs::read_to_string(&config_path).unwrap(), broken);
+}
+
+#[cfg(unix)]
+#[test]
+fn saving_keeps_the_existing_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+    fs::write(&config_path, "[project]\nname = \"demo\"\n").unwrap();
+    fs::set_permissions(&config_path, fs::Permissions::from_mode(0o644)).unwrap();
+
+    let config = load_project_config(&config_path).unwrap();
+    save_project_config(&config_path, &config).unwrap();
+
+    assert_eq!(
+        fs::metadata(&config_path).unwrap().permissions().mode() & 0o777,
+        0o644,
+        "an atomic replace must not silently re-chmod the user's config"
+    );
+}

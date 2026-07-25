@@ -2,6 +2,136 @@ use crate::fzf;
 use crate::models::{GlobalConfig, GlobalProjectEntry, ProjectConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
+use toml_edit::{value, Array, ArrayOfTables, DocumentMut, Item, Table};
+
+/// Replace `path`'s contents atomically.
+///
+/// `fs::write` truncates the destination before writing, so a crash, a full
+/// disk, or a permission failure partway through leaves a half-written config
+/// that no longer parses. Writing a sibling temp file and renaming it over the
+/// destination means readers only ever see the old file or the complete new one.
+fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
+    use std::io::Write;
+
+    let dir = path.parent().filter(|p| !p.as_os_str().is_empty());
+    let dir = dir.unwrap_or_else(|| Path::new("."));
+    // Same directory as the destination: rename is only atomic within a
+    // filesystem, and the temp dir may be on a different one.
+    let mut file = tempfile::NamedTempFile::new_in(dir)
+        .map_err(|e| format!("failed to stage config write: {e}"))?;
+    file.write_all(content.as_bytes())
+        .map_err(|e| format!("failed to write config: {e}"))?;
+    // Carry over the destination's permissions. The staged file is created 0600,
+    // so replacing without this would silently re-chmod a config the user may
+    // have deliberately opened up. A brand-new config keeps the 0600 default.
+    #[cfg(unix)]
+    if let Ok(existing) = fs::metadata(path) {
+        let _ = file.as_file().set_permissions(existing.permissions());
+    }
+    file.as_file()
+        .sync_all()
+        .map_err(|e| format!("failed to flush config: {e}"))?;
+    file.persist(path)
+        .map_err(|e| format!("failed to replace {}: {e}", path.display()))?;
+    Ok(())
+}
+
+/// Parse `path` for in-place editing, or `None` when it does not exist yet.
+///
+/// A file that exists but does not parse is an error rather than a silent
+/// regeneration: overwriting it would destroy whatever the user was editing.
+fn existing_document(path: &Path) -> Result<Option<DocumentMut>, String> {
+    match fs::read_to_string(path) {
+        Ok(content) => content
+            .parse::<DocumentMut>()
+            .map(Some)
+            .map_err(|e| format!("failed to parse {}: {e}", path.display())),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
+        Err(e) => Err(format!("failed to read {}: {e}", path.display())),
+    }
+}
+
+/// Set `key` to `val`, or remove it when `val` is `None`.
+fn set_optional_str(table: &mut Table, key: &str, val: Option<&str>) {
+    match val {
+        Some(v) => table[key] = value(v),
+        None => {
+            table.remove(key);
+        }
+    }
+}
+
+/// Look up an existing array-of-tables entry by its `name` key so a rewrite can
+/// reuse it, carrying along its comments and any keys QuickDev does not model.
+fn table_named(tables: &ArrayOfTables, name: &str) -> Option<Table> {
+    tables
+        .iter()
+        .find(|t| t.get("name").and_then(Item::as_str) == Some(name))
+        .cloned()
+}
+
+fn existing_tables(doc: &DocumentMut, key: &str) -> ArrayOfTables {
+    doc.get(key)
+        .and_then(Item::as_array_of_tables)
+        .cloned()
+        .unwrap_or_default()
+}
+
+fn put_tables(doc: &mut DocumentMut, key: &str, tables: ArrayOfTables) {
+    if tables.is_empty() {
+        doc.remove(key);
+    } else {
+        doc[key] = Item::ArrayOfTables(tables);
+    }
+}
+
+fn apply_project_config(doc: &mut DocumentMut, config: &ProjectConfig) {
+    doc["project"]["name"] = value(config.project.name.as_str());
+
+    let previous = existing_tables(doc, "terminals");
+    let mut terminals = ArrayOfTables::new();
+    for terminal in &config.terminals {
+        let mut table = table_named(&previous, &terminal.name).unwrap_or_default();
+        table["name"] = value(terminal.name.as_str());
+        table["path"] = value(terminal.path.as_str());
+        set_optional_str(&mut table, "command", terminal.command.as_deref());
+        set_optional_str(&mut table, "emulator", terminal.emulator.as_deref());
+        terminals.push(table);
+    }
+    put_tables(doc, "terminals", terminals);
+
+    let previous = existing_tables(doc, "applications");
+    let mut applications = ArrayOfTables::new();
+    for app in &config.applications {
+        let mut table = table_named(&previous, &app.name).unwrap_or_default();
+        table["name"] = value(app.name.as_str());
+        table["path"] = value(app.path.as_str());
+        match &app.args {
+            Some(args) => table["args"] = value(args.iter().map(String::as_str).collect::<Array>()),
+            None => {
+                table.remove("args");
+            }
+        }
+        applications.push(table);
+    }
+    put_tables(doc, "applications", applications);
+}
+
+fn apply_global_config(doc: &mut DocumentMut, config: &GlobalConfig) {
+    set_optional_str(doc.as_table_mut(), "emulator", config.emulator.as_deref());
+    doc["terminal_app_tabbing_prompt_declined"] =
+        value(config.terminal_app_tabbing_prompt_declined);
+
+    let previous = existing_tables(doc, "projects");
+    let mut projects = ArrayOfTables::new();
+    for project in &config.projects {
+        let mut table = table_named(&previous, &project.name).unwrap_or_default();
+        table["name"] = value(project.name.as_str());
+        table["path"] = value(project.path.as_str());
+        projects.push(table);
+    }
+    put_tables(doc, "projects", projects);
+}
 
 pub fn global_config_path() -> Result<PathBuf, String> {
     let home = dirs::home_dir().ok_or("could not determine home directory")?;
@@ -35,10 +165,20 @@ pub fn save_global_config(path: &Path, config: &GlobalConfig) -> Result<(), Stri
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create config directory: {e}"))?;
     }
-    let serialized = toml::to_string_pretty(config)
-        .map_err(|e| format!("failed to serialize global config: {e}"))?;
-    let content = format!("{GLOBAL_COMMENT_HEADER}\n{serialized}");
-    fs::write(path, content).map_err(|e| format!("failed to write global config: {e}"))
+    let content = match existing_document(path)? {
+        // Edit the file the user has: their comments, formatting, and any keys a
+        // newer QuickDev writes but this build does not model survive the write.
+        Some(mut doc) => {
+            apply_global_config(&mut doc, config);
+            doc.to_string()
+        }
+        None => {
+            let serialized = toml::to_string_pretty(config)
+                .map_err(|e| format!("failed to serialize global config: {e}"))?;
+            format!("{GLOBAL_COMMENT_HEADER}\n{serialized}")
+        }
+    };
+    atomic_write(path, &content)
 }
 
 pub fn load_project_config(path: &Path) -> Result<ProjectConfig, String> {
@@ -68,11 +208,18 @@ const TOML_COMMENT_HEADER: &str = "\
 ";
 
 pub fn save_project_config(path: &Path, config: &ProjectConfig) -> Result<(), String> {
-    let serialized = toml::to_string_pretty(config)
-        .map_err(|e| format!("failed to serialize project config: {e}"))?;
-
-    let content = format!("{TOML_COMMENT_HEADER}\n{serialized}");
-    fs::write(path, content).map_err(|e| format!("failed to write project config: {e}"))
+    let content = match existing_document(path)? {
+        Some(mut doc) => {
+            apply_project_config(&mut doc, config);
+            doc.to_string()
+        }
+        None => {
+            let serialized = toml::to_string_pretty(config)
+                .map_err(|e| format!("failed to serialize project config: {e}"))?;
+            format!("{TOML_COMMENT_HEADER}\n{serialized}")
+        }
+    };
+    atomic_write(path, &content)
 }
 
 pub fn find_project_config(start: &Path) -> Result<(PathBuf, PathBuf), String> {
