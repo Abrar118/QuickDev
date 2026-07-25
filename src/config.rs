@@ -3,9 +3,9 @@ use crate::models::{GlobalConfig, GlobalProjectEntry, ProjectConfig};
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub fn global_config_path() -> PathBuf {
-    let home = dirs::home_dir().expect("could not determine home directory");
-    home.join("Documents").join("quickdev").join("config.toml")
+pub fn global_config_path() -> Result<PathBuf, String> {
+    let home = dirs::home_dir().ok_or("could not determine home directory")?;
+    Ok(home.join("Documents").join("quickdev").join("config.toml"))
 }
 
 pub fn load_global_config(path: &Path) -> Result<GlobalConfig, String> {
@@ -289,7 +289,7 @@ pub fn projects_json(statuses: &[ProjectStatus]) -> String {
 }
 
 fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
     let global = load_global_config(&global_path)?;
 
     if global.projects.is_empty() {

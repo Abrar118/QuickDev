@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::process;
 
 pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> Result<(), String> {
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
     let mut global = load_global_config(&global_path)?;
 
     let (config, project_root) = match project {

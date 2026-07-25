@@ -5,7 +5,7 @@ use crate::config::{
 };
 
 pub(crate) fn cmd_config(action: ConfigAction) -> Result<(), String> {
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
     let mut global = load_global_config(&global_path)?;
 
     match action {

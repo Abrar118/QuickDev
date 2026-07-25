@@ -10,6 +10,8 @@ pub mod kitty;
 pub mod launch;
 pub mod models;
 pub mod parse;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+pub mod session_dir;
 pub mod tab_strategy;
 pub mod terminal_app;
 pub mod validate;

@@ -11,7 +11,7 @@ pub(crate) fn cmd_doctor(fix: bool) -> Result<(), String> {
         run_fix()?;
     }
 
-    let report = gather_report();
+    let report = gather_report()?;
     print!("{}", render_doctor(&report));
 
     if doctor_has_errors(&report) {
@@ -21,22 +21,22 @@ pub(crate) fn cmd_doctor(fix: bool) -> Result<(), String> {
     }
 }
 
-fn gather_report() -> DoctorReport {
-    let global_path = global_config_path();
+fn gather_report() -> Result<DoctorReport, String> {
+    let global_path = global_config_path()?;
     let (global_config_ok, projects) = match load_global_config(&global_path) {
         Ok(global) => (true, project_statuses(&global)),
         Err(_) => (false, vec![]),
     };
 
-    DoctorReport {
+    Ok(DoctorReport {
         global_config_ok,
         fzf_available: fzf::check_fzf(),
         projects,
-    }
+    })
 }
 
 fn run_fix() -> Result<(), String> {
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
 
     // 1. Create the global config dir/file if missing.
     if !global_path.exists() {

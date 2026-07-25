@@ -881,3 +881,30 @@ fn terminal_path_must_exist_on_disk() {
 
     std::fs::remove_dir_all(&root).ok();
 }
+
+#[test]
+fn only_pre_start_tab_failures_may_be_retried() {
+    use quickdev::launch::TabLaunchFailure;
+
+    // Nothing was launched, so re-launching the terminals one window at a time
+    // runs each startup command exactly once.
+    assert!(TabLaunchFailure::NotStarted("kitty not found".into()).may_retry());
+
+    // The emulator ran and then failed. Tabs may already be open with their
+    // startup commands executing; a retry would run every command twice.
+    assert!(!TabLaunchFailure::PossiblyStarted("osascript error".into()).may_retry());
+}
+
+#[test]
+fn tab_launch_failure_message_is_preserved_for_reporting() {
+    use quickdev::launch::TabLaunchFailure;
+
+    assert_eq!(
+        TabLaunchFailure::PossiblyStarted("Automation denied".into()).message(),
+        "Automation denied"
+    );
+    assert_eq!(
+        TabLaunchFailure::NotStarted("mixed terminal emulators cannot share tabs".into()).message(),
+        "mixed terminal emulators cannot share tabs"
+    );
+}

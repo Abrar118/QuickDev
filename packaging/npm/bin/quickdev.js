@@ -9,7 +9,7 @@ const binPath = binaryPath(process.platform, path.join(__dirname, '..'));
 
 if (!fs.existsSync(binPath)) {
   console.error(
-    'quickdev: native binary not found. Reinstall with `npm install -g quickdev` ' +
+    'quickdev: native binary not found. Reinstall with `npm install -g @panda-orion/quickdev` ' +
     '(postinstall scripts must be enabled), or grab a binary from ' +
     'https://github.com/Abrar118/QuickDev/releases'
   );

@@ -14,7 +14,7 @@ pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
         .map(|n| n.to_string_lossy().to_string())
         .unwrap_or_else(|| "project".to_string());
 
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
     let mut global = load_global_config(&global_path)?;
 
     let cwd_str = cwd.to_string_lossy().to_string();

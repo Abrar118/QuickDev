@@ -6,7 +6,7 @@ pub(crate) fn cmd_deregister(delete: bool) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
     let (config_path, project_root) = resolve_project_config(&cwd)?;
 
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
     let mut global = load_global_config(&global_path)?;
 
     let root_str = project_root.to_string_lossy().to_string();
