@@ -91,6 +91,53 @@ pub fn command_exists(command: &str) -> bool {
     resolve_command(command).is_some()
 }
 
+/// Candidate locations for a macOS kitty install that isn't on `PATH`.
+///
+/// kitty's macOS installers (the `.dmg` and the official `curl` installer) drop
+/// an app bundle without putting `kitty` on `PATH` — kitty's own docs hand users
+/// the full binary path for command-line use. A `PATH`-only probe therefore
+/// misses a perfectly good installation, silently downgrading auto-detect to
+/// another emulator and failing explicit `emulator = "kitty"` as "not found".
+///
+/// `home` is a parameter rather than read internally so this stays a pure,
+/// testable function.
+#[cfg_attr(not(target_os = "macos"), allow(dead_code))]
+pub fn macos_kitty_bundle_paths(home: Option<&str>) -> Vec<String> {
+    let mut paths = vec!["/Applications/kitty.app/Contents/MacOS/kitty".to_string()];
+    if let Some(home) = home {
+        paths.push(format!(
+            "{home}/Applications/kitty.app/Contents/MacOS/kitty"
+        ));
+        paths.push(format!("{home}/.local/kitty.app/bin/kitty"));
+    }
+    paths
+}
+
+/// Resolve the kitty executable to invoke: `PATH` first, then (on macOS) the
+/// standard app-bundle locations. `None` means kitty isn't installed.
+///
+/// Every kitty probe and launch goes through this so that detection, the
+/// Terminal.app tabbing prompt, and the launchers can never disagree about
+/// whether kitty is available.
+pub fn resolve_kitty() -> Option<String> {
+    if let Some(path) = resolve_command("kitty") {
+        return Some(path);
+    }
+
+    #[cfg(target_os = "macos")]
+    {
+        let home = dirs::home_dir().map(|p| p.to_string_lossy().into_owned());
+        macos_kitty_bundle_paths(home.as_deref())
+            .into_iter()
+            .find(|p| std::path::Path::new(p).is_file())
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+        None
+    }
+}
+
 pub fn resolve_command(command: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     {

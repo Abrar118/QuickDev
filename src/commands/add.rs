@@ -126,6 +126,7 @@ fn pick_emulator() -> Result<Option<String>, String> {
         "terminal".to_string(),
         "gnome-terminal".to_string(),
         "ptyxis".to_string(),
+        "kitty".to_string(),
     ];
     let selected = fzf::fzf_select_one(&options, "Select terminal emulator:")?;
 

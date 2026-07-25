@@ -1,6 +1,6 @@
 use crate::adapters::{
     command_exists, infer_tool_id, infer_tool_id_from_path, is_editor_tool,
-    launch_command_for_tool, resolve_command,
+    launch_command_for_tool, resolve_command, resolve_kitty,
 };
 use crate::models::ProjectConfig;
 use std::path::Path;
@@ -12,7 +12,7 @@ use std::path::Path;
 use crate::ghostty_applescript::{build_script as build_ghostty_script, ResolvedTerminal};
 #[cfg(target_os = "linux")]
 use crate::gnome_terminal::{launch_gnome_terminal_load_config, GnomeTab};
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::kitty::{launch_kitty_session, KittyTab};
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 use crate::tab_strategy::{select_tab_strategy, TabCapabilities, TabStrategy};
@@ -79,14 +79,15 @@ pub fn emulator_watch_process(
         // on. Handled by the wildcard `Some(_) => None` arm below.
         Some(_) => None,
         None => {
-            // Mirror launch_terminal's auto-selection. On macOS, an unspecified
-            // emulator only attempts Ghostty. On Linux, auto-detect prefers
-            // kitty (not single-instance → no readiness wait). Otherwise fall to
-            // the native terminal. We must not watch a process we never launch.
-            if os == "macos" && ghostty_available {
-                Some("ghostty")
-            } else if os == "linux" && kitty_available {
+            // Mirror launch_terminal's auto-selection. On both macOS and Linux
+            // auto-detect prefers kitty, which is not single-instance, so there
+            // is no readiness proxy to wait on. Without kitty, macOS falls to
+            // Ghostty and then the native terminal; Linux goes straight to the
+            // native terminal. We must not watch a process we never launch.
+            if kitty_available && matches!(os, "macos" | "linux") {
                 None
+            } else if os == "macos" && ghostty_available {
+                Some("ghostty")
             } else {
                 native_terminal_process(os, ptyxis_available)
             }
@@ -268,7 +269,7 @@ pub fn launch_project(
         .map(command_exists)
         .unwrap_or(false);
     let ptyxis_available = command_exists("ptyxis");
-    let kitty_available = command_exists("kitty");
+    let kitty_available = resolve_kitty().is_some();
     let watch = emulator_watch_process(
         first_emulator,
         ghostty_available,
@@ -284,7 +285,7 @@ pub fn launch_project(
     let mut prepared_terminals = Vec::new();
 
     for (i, terminal) in config.terminals.iter().enumerate() {
-        let resolved_path = match resolve_terminal_path(project_root, &terminal.path) {
+        let resolved_path = match resolve_existing_terminal_path(project_root, &terminal.path) {
             Ok(path) => path,
             Err(e) => {
                 terminal_results[i] = Some(LaunchResult {
@@ -416,11 +417,11 @@ fn launch_terminal_tabs(
     {
         let caps = probe_tab_capabilities();
         match select_tab_strategy(std::env::consts::OS, first_emulator, &caps) {
+            TabStrategy::KittySession => launch_kitty_tabs(terminals),
             TabStrategy::AppleScriptTab => launch_ghostty_applescript_tabs(terminals),
             TabStrategy::TerminalAppTab => launch_terminal_app_tabs(terminals),
             TabStrategy::CliTab
             | TabStrategy::GnomeTerminalLoadConfig
-            | TabStrategy::KittySession
             | TabStrategy::WindowOnly => Err("unsupported tab emulator".to_string()),
         }
     }
@@ -429,17 +430,7 @@ fn launch_terminal_tabs(
     {
         let caps = probe_linux_tab_capabilities();
         match select_tab_strategy(std::env::consts::OS, first_emulator, &caps) {
-            TabStrategy::KittySession => {
-                let tabs: Vec<KittyTab<'_>> = terminals
-                    .iter()
-                    .map(|t| KittyTab {
-                        title: &t.name,
-                        cwd: &t.path,
-                        command: t.command.as_deref(),
-                    })
-                    .collect();
-                launch_kitty_session(&tabs)
-            }
+            TabStrategy::KittySession => launch_kitty_tabs(terminals),
             TabStrategy::GnomeTerminalLoadConfig => {
                 let tabs: Vec<GnomeTab<'_>> = terminals
                     .iter()
@@ -463,12 +454,27 @@ fn launch_terminal_tabs(
     }
 }
 
+/// Group the prepared terminals into one kitty window via a `--session` file.
+/// Shared by macOS and Linux — kitty's session format is identical on both.
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn launch_kitty_tabs(terminals: &[PreparedTerminal]) -> Result<(), String> {
+    let tabs: Vec<KittyTab<'_>> = terminals
+        .iter()
+        .map(|t| KittyTab {
+            title: &t.name,
+            cwd: &t.path,
+            command: t.command.as_deref(),
+        })
+        .collect();
+    launch_kitty_session(&tabs)
+}
+
 #[cfg(target_os = "linux")]
 fn probe_linux_tab_capabilities() -> TabCapabilities {
     TabCapabilities {
         ptyxis_available: command_exists("ptyxis"),
         gnome_terminal_available: command_exists("gnome-terminal"),
-        kitty_available: command_exists("kitty"),
+        kitty_available: resolve_kitty().is_some(),
         ..TabCapabilities::default()
     }
 }
@@ -481,7 +487,7 @@ fn probe_tab_capabilities() -> TabCapabilities {
         ghostty_applescript: ghostty_applescript_enabled(),
         ptyxis_available: command_exists("ptyxis"),
         gnome_terminal_available: command_exists("gnome-terminal"),
-        kitty_available: false,
+        kitty_available: resolve_kitty().is_some(),
         wt_available: command_exists("wt"),
     }
 }
@@ -562,6 +568,24 @@ fn run_osascript(script: &str) -> Result<(), String> {
     } else {
         Err(detail.to_string())
     }
+}
+
+/// Resolve a terminal's configured path and confirm the directory is on disk.
+///
+/// Grouped (tabbed) launches hand every directory to the emulator in a single
+/// invocation, so there is no per-terminal error to observe: a missing directory
+/// makes only that tab's wrapper fail its `cd` and exit, while QuickDev would
+/// otherwise mark every tab successful. Catching it here keeps the reported
+/// result honest for grouped and per-window launches alike.
+pub fn resolve_existing_terminal_path(
+    project_root: &Path,
+    relative_path: &str,
+) -> Result<String, String> {
+    let resolved = resolve_terminal_path(project_root, relative_path)?;
+    if !Path::new(&resolved).exists() {
+        return Err(format!("path not found: {resolved}"));
+    }
+    Ok(resolved)
 }
 
 pub fn resolve_terminal_path(project_root: &Path, relative_path: &str) -> Result<String, String> {
@@ -702,12 +726,44 @@ fn launch_terminal(
         None => {}
     }
 
+    // Auto-detect on macOS: kitty first, then Ghostty, then Terminal.app (the
+    // platform fallback below). Mirrors the Linux ordering in
+    // `run_in_platform_terminal` and the auto arms of `select_tab_strategy`.
     #[cfg(target_os = "macos")]
-    if try_ghostty(resolved_path, command).is_ok() {
-        return Ok(());
+    {
+        if try_kitty(resolved_path, command).is_ok() {
+            return Ok(());
+        }
+        if try_ghostty(resolved_path, command).is_ok() {
+            return Ok(());
+        }
     }
 
     run_in_platform_terminal(resolved_path, command, tab_index, None)
+}
+
+/// Open a single kitty window at `cwd`, optionally running `command` before
+/// dropping into a login shell. kitty is not single-instance, so every call
+/// yields its own window.
+#[cfg(target_os = "macos")]
+fn try_kitty(cwd: &str, command: Option<&str>) -> Result<(), String> {
+    let resolved = resolve_kitty().ok_or("kitty not found".to_string())?;
+
+    let user_shell = std::env::var("SHELL").unwrap_or_else(|_| "sh".to_string());
+    let escaped_cwd = cwd.replace('\'', "'\\''");
+    let shell_command = match command.filter(|cmd| !cmd.is_empty()) {
+        Some(cmd) => format!("cd '{escaped_cwd}' && {cmd}; exec {user_shell}"),
+        None => format!("cd '{escaped_cwd}' && exec {user_shell}"),
+    };
+
+    // No `--` separator: the program and its args follow kitty's own options.
+    Command::new(resolved)
+        .args(["-d", cwd, &user_shell, "-lc", &shell_command])
+        .stdout(std::process::Stdio::null())
+        .stderr(std::process::Stdio::null())
+        .spawn()
+        .map(|_| ())
+        .map_err(|e| format!("kitty launch failed: {e}"))
 }
 
 fn try_ghostty(cwd: &str, command: Option<&str>) -> Result<(), String> {
@@ -750,8 +806,10 @@ fn run_in_platform_terminal(
 
     #[cfg(target_os = "macos")]
     {
-        if let Some(name) = forced {
-            return Err(format!("{name} is only available on Linux"));
+        match forced {
+            Some("kitty") => return try_kitty(cwd, command),
+            Some(name) => return Err(format!("{name} is only available on Linux")),
+            None => {}
         }
         let _ = tab_index;
         let script = build_window_script(ResolvedTerminal {
@@ -834,8 +892,7 @@ fn run_in_platform_terminal(
         let try_ptyxis = forced.is_none() || forced == Some("ptyxis");
         let try_gnome = forced.is_none() || forced == Some("gnome-terminal");
 
-        if try_kitty && command_exists("kitty") {
-            let resolved = resolve_command("kitty").unwrap_or_else(|| "kitty".to_string());
+        if let (true, Some(resolved)) = (try_kitty, resolve_kitty()) {
             // kitty is not single-instance; each invocation is its own window.
             // No `--` separator: program + args follow kitty's options directly.
             if Command::new(resolved)

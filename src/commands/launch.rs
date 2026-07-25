@@ -1,4 +1,4 @@
-use crate::adapters::command_exists;
+use crate::adapters::{command_exists, resolve_kitty};
 use crate::commands::shared::{build_item_display_list, parse_selected_items};
 use crate::config::{
     global_config_path, load_global_config, load_project_config, resolve_project_config,
@@ -119,6 +119,10 @@ fn should_prompt_for_terminal_app_tabbing(
 
     config.terminals.iter().any(|terminal| {
         let effective = terminal.emulator.as_deref().or(global_emulator);
-        matches!(effective, Some("terminal")) || (effective.is_none() && !command_exists("ghostty"))
+        // Only prompt when Terminal.app is what will actually open. Auto-detect
+        // reaches it last: kitty and Ghostty are both preferred when installed,
+        // so their presence means the prompt would be about an unused emulator.
+        matches!(effective, Some("terminal"))
+            || (effective.is_none() && resolve_kitty().is_none() && !command_exists("ghostty"))
     })
 }

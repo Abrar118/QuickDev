@@ -86,7 +86,7 @@ fn titles_cannot_inject_session_directives_via_newline() {
         .any(|line| line.trim() == "launch /bin/sh '/evil.sh'"));
 }
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 #[test]
 fn write_session_creates_executable_wrappers_and_session_file() {
     use quickdev::kitty::{write_session, KittyTab};

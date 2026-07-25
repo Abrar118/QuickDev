@@ -754,3 +754,130 @@ fn watch_process_auto_kitty_on_linux_is_none() {
         None
     );
 }
+
+#[test]
+fn macos_kitty_explicit_uses_session() {
+    // Explicit kitty wins over a fully AppleScript-capable Ghostty.
+    let caps = TabCapabilities {
+        kitty_available: true,
+        ghostty_available: true,
+        ghostty_version: Some("1.3.0".to_string()),
+        ghostty_applescript: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("macos", Some("kitty"), &caps),
+        TabStrategy::KittySession
+    );
+}
+
+#[test]
+fn macos_kitty_explicit_without_binary_is_window_only() {
+    let caps = TabCapabilities::default();
+    assert_eq!(
+        select_tab_strategy("macos", Some("kitty"), &caps),
+        TabStrategy::WindowOnly
+    );
+}
+
+#[test]
+fn macos_auto_prefers_kitty_over_ghostty_and_terminal_app() {
+    let caps = TabCapabilities {
+        kitty_available: true,
+        ghostty_available: true,
+        ghostty_version: Some("1.3.0".to_string()),
+        ghostty_applescript: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("macos", None, &caps),
+        TabStrategy::KittySession
+    );
+}
+
+#[test]
+fn macos_explicit_ghostty_and_terminal_ignore_kitty() {
+    // kitty only wins auto-detect; an explicitly pinned emulator is honored.
+    let caps = TabCapabilities {
+        kitty_available: true,
+        ghostty_available: true,
+        ghostty_version: Some("1.3.0".to_string()),
+        ghostty_applescript: true,
+        ..TabCapabilities::default()
+    };
+    assert_eq!(
+        select_tab_strategy("macos", Some("ghostty"), &caps),
+        TabStrategy::AppleScriptTab
+    );
+    assert_eq!(
+        select_tab_strategy("macos", Some("terminal"), &caps),
+        TabStrategy::TerminalAppTab
+    );
+}
+
+#[test]
+fn watch_process_auto_kitty_on_macos_is_none() {
+    // kitty available alongside Ghostty; auto-detect now prefers kitty, which
+    // is not single-instance, so nothing should be watched for readiness.
+    assert_eq!(
+        emulator_watch_process(None, true, false, true, "macos"),
+        None
+    );
+    // Without kitty, macOS auto still cold-starts Ghostty.
+    assert_eq!(
+        emulator_watch_process(None, true, false, false, "macos"),
+        Some("ghostty")
+    );
+}
+
+#[test]
+fn watch_process_explicit_kitty_on_macos_is_none() {
+    assert_eq!(
+        emulator_watch_process(Some("kitty"), true, false, true, "macos"),
+        None
+    );
+}
+
+#[test]
+fn macos_kitty_bundle_paths_cover_system_and_user_installs() {
+    use quickdev::adapters::macos_kitty_bundle_paths;
+
+    let paths = macos_kitty_bundle_paths(Some("/Users/me"));
+    // The .dmg / drag-install location.
+    assert!(paths.contains(&"/Applications/kitty.app/Contents/MacOS/kitty".to_string()));
+    // A per-user app-bundle install.
+    assert!(paths.contains(&"/Users/me/Applications/kitty.app/Contents/MacOS/kitty".to_string()));
+    // The official `curl` installer's target.
+    assert!(paths.contains(&"/Users/me/.local/kitty.app/bin/kitty".to_string()));
+
+    // Without a home directory only the system-wide bundle is a candidate.
+    assert_eq!(
+        macos_kitty_bundle_paths(None),
+        vec!["/Applications/kitty.app/Contents/MacOS/kitty".to_string()]
+    );
+}
+
+#[test]
+fn terminal_path_must_exist_on_disk() {
+    use quickdev::launch::resolve_existing_terminal_path;
+
+    let root = std::env::temp_dir().join(format!("quickdev-exists-{}", std::process::id()));
+    std::fs::create_dir_all(root.join("present")).unwrap();
+
+    assert!(resolve_existing_terminal_path(&root, "present").is_ok());
+
+    // A directory that resolves fine but is not on disk must be an error, not a
+    // silent success — grouped (tabbed) launches hand every path to the emulator
+    // at once, so nothing downstream would otherwise catch it.
+    let err = resolve_existing_terminal_path(&root, "absent").unwrap_err();
+    assert!(
+        err.starts_with("path not found:"),
+        "unexpected error: {err}"
+    );
+
+    // Containment violations still report as such, not as a missing path.
+    let escaping = resolve_existing_terminal_path(&root, "/etc").unwrap_err();
+    assert!(escaping.contains("must stay inside the project root"));
+
+    std::fs::remove_dir_all(&root).ok();
+}
