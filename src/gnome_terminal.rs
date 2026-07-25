@@ -122,11 +122,20 @@ pub fn launch_gnome_terminal_load_config(
 
     let resolved = resolve_command("gnome-terminal")
         .ok_or_else(|| TabLaunchFailure::NotStarted("gnome-terminal not found".to_string()))?;
-    let output = Command::new(resolved)
+    // Spawn and wait separately, not `.output()`: only a failed spawn proves
+    // nothing ran. A failure while waiting happens after gnome-terminal has
+    // started walking the keyfile and opening tabs, so it is not retry-safe.
+    let child = Command::new(resolved)
         .arg(format!("--load-config={}", conf.display()))
         .stdout(Stdio::null())
-        .output()
-        .map_err(|e| TabLaunchFailure::NotStarted(format!("gnome-terminal launch failed: {e}")))?;
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            TabLaunchFailure::NotStarted(format!("could not start gnome-terminal: {e}"))
+        })?;
+    let output = child.wait_with_output().map_err(|e| {
+        TabLaunchFailure::PossiblyStarted(format!("lost track of gnome-terminal: {e}"))
+    })?;
     if output.status.success() {
         return Ok(());
     }

@@ -628,12 +628,31 @@ fn run_osascript(script: &str, what: &str) -> Result<(), TabLaunchFailure> {
     // (e.g. Automation/Accessibility not yet granted, or a script error) exits
     // non-zero. We must surface that so the caller falls back to separate
     // windows instead of reporting phantom success. `.spawn()` would ignore it.
-    let output = match Command::new("osascript").args(["-e", script]).output() {
-        Ok(output) => output,
-        // osascript itself never ran, so no tab was opened.
+    //
+    // Spawn and wait are separate calls rather than one `.output()`: only a
+    // failed *spawn* proves nothing ran. `.output()` collapses both into one
+    // error, so a failure while waiting or reading the pipes — after osascript
+    // has already started opening tabs — would be misreported as retry-safe.
+    let child = Command::new("osascript")
+        .args(["-e", script])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let child = match child {
+        Ok(child) => child,
+        // osascript itself never started, so no tab was opened.
         Err(e) => {
             return Err(TabLaunchFailure::NotStarted(format!(
-                "{what} failed: osascript failed: {e}"
+                "{what} failed: could not start osascript: {e}"
+            )))
+        }
+    };
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        // osascript was running; we simply lost track of it.
+        Err(e) => {
+            return Err(TabLaunchFailure::PossiblyStarted(format!(
+                "{what} failed: lost track of osascript: {e}"
             )))
         }
     };

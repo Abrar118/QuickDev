@@ -55,3 +55,32 @@ fn write_new_refuses_an_existing_symlink_instead_of_following_it() {
         "writing through a planted symlink must not clobber the target"
     );
 }
+
+#[test]
+fn reaper_only_targets_marked_session_directories() {
+    use quickdev::session_dir::is_reapable;
+    use std::time::{Duration, SystemTime};
+
+    let long_after = SystemTime::now() + Duration::from_secs(48 * 60 * 60);
+
+    let ours = create_session_dir().unwrap();
+    // Fresh: nothing to reap yet, even though it is ours.
+    assert!(!is_reapable(&ours, SystemTime::now()));
+    // Old enough, ours, marked.
+    assert!(is_reapable(&ours, long_after));
+
+    // The npm installer stages downloads in mkdtemp(tmpdir/"quickdev-"). It must
+    // never be reaped, however old — a slow install would lose its archive.
+    let npm_style = std::env::temp_dir().join("quickdev-abc123");
+    std::fs::create_dir_all(&npm_style).unwrap();
+    assert!(!is_reapable(&npm_style, long_after));
+
+    // Right prefix, but not ours: no marker file.
+    let unmarked = std::env::temp_dir().join("quickdev-tabs-not-ours");
+    std::fs::create_dir_all(&unmarked).unwrap();
+    assert!(!is_reapable(&unmarked, long_after));
+
+    std::fs::remove_dir_all(&ours).ok();
+    std::fs::remove_dir_all(&npm_style).ok();
+    std::fs::remove_dir_all(&unmarked).ok();
+}
