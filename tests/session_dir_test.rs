@@ -69,18 +69,24 @@ fn reaper_only_targets_marked_session_directories() {
     // Old enough, ours, marked.
     assert!(is_reapable(&ours, long_after));
 
+    // Fixtures live in a private sandbox, never at fixed paths in the shared
+    // temp dir: `is_reapable` judges a path by name, marker and age regardless of
+    // where it sits, and a test that creates and recursively deletes
+    // `/tmp/quickdev-abc123` could collide with a real process — including the
+    // very npm staging directory this case exists to protect.
+    let sandbox = tempfile::tempdir().unwrap();
+
     // The npm installer stages downloads in mkdtemp(tmpdir/"quickdev-"). It must
     // never be reaped, however old — a slow install would lose its archive.
-    let npm_style = std::env::temp_dir().join("quickdev-abc123");
+    let npm_style = sandbox.path().join("quickdev-abc123");
     std::fs::create_dir_all(&npm_style).unwrap();
     assert!(!is_reapable(&npm_style, long_after));
 
     // Right prefix, but not ours: no marker file.
-    let unmarked = std::env::temp_dir().join("quickdev-tabs-not-ours");
+    let unmarked = sandbox.path().join("quickdev-tabs-not-ours");
     std::fs::create_dir_all(&unmarked).unwrap();
     assert!(!is_reapable(&unmarked, long_after));
 
+    // `ours` is a uniquely-named directory we created, so removing it is safe.
     std::fs::remove_dir_all(&ours).ok();
-    std::fs::remove_dir_all(&npm_style).ok();
-    std::fs::remove_dir_all(&unmarked).ok();
 }
