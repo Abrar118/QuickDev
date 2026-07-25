@@ -5,7 +5,7 @@ use crate::config::{
 use std::path::PathBuf;
 
 pub(crate) fn cmd_list(missing: bool, json: bool) -> Result<(), String> {
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
     let global = load_global_config(&global_path)?;
     let statuses = project_statuses(&global);
 

@@ -1,5 +1,5 @@
 use crate::adapters::{command_exists, resolve_kitty};
-use crate::commands::shared::{build_item_display_list, parse_selected_items};
+use crate::commands::shared::{build_item_display_list, selected_items};
 use crate::config::{
     global_config_path, load_global_config, load_project_config, resolve_project_config,
     save_global_config,
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 use std::process;
 
 pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> Result<(), String> {
-    let global_path = global_config_path();
+    let global_path = global_config_path()?;
     let mut global = load_global_config(&global_path)?;
 
     let (config, project_root) = match project {
@@ -47,22 +47,26 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> R
         if items.len() <= 1 {
             config
         } else {
-            let selected = fzf::fzf_select_multi(
+            let picked = fzf::fzf_select_multi_indexed(
                 &items,
                 "Select items to launch (TAB to toggle, ENTER to confirm):",
             )?;
-            let (terminal_names, app_names) = parse_selected_items(&selected);
+            let (terminals, apps) = selected_items(&config, &picked);
             ProjectConfig {
                 project: config.project,
                 terminals: config
                     .terminals
                     .into_iter()
-                    .filter(|t| terminal_names.contains(&t.name))
+                    .enumerate()
+                    .filter(|(i, _)| terminals.contains(i))
+                    .map(|(_, t)| t)
                     .collect(),
                 applications: config
                     .applications
                     .into_iter()
-                    .filter(|a| app_names.contains(&a.name))
+                    .enumerate()
+                    .filter(|(i, _)| apps.contains(i))
+                    .map(|(_, a)| a)
                     .collect(),
             }
         }

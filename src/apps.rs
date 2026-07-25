@@ -319,17 +319,29 @@ fn resolve_lnk(path: &std::path::Path) -> Option<AppEntry> {
 }
 
 /// Whether a `.desktop` `TryExec` value points at a launchable binary: an
-/// absolute/relative path that exists, or a bare name found on `$PATH`. Linux
-/// I/O — not unit-tested.
+/// absolute/relative path that is executable, or a bare name found executable on
+/// `$PATH`. Linux I/O — not unit-tested.
+///
+/// The Desktop Entry specification defines `TryExec` as "path to an executable
+/// file on disk used to determine if the program is actually installed", so a
+/// non-executable file or a directory of that name does not count.
 #[cfg(target_os = "linux")]
 fn try_exec_resolvable(cmd: &str) -> bool {
     use std::path::Path;
+
+    fn is_executable_file(path: &Path) -> bool {
+        use std::os::unix::fs::PermissionsExt;
+        std::fs::metadata(path)
+            .map(|m| m.is_file() && m.permissions().mode() & 0o111 != 0)
+            .unwrap_or(false)
+    }
+
     if cmd.contains('/') {
-        return Path::new(cmd).exists();
+        return is_executable_file(Path::new(cmd));
     }
     if let Ok(path_var) = std::env::var("PATH") {
         for dir in path_var.split(':') {
-            if Path::new(dir).join(cmd).exists() {
+            if is_executable_file(&Path::new(dir).join(cmd)) {
                 return true;
             }
         }

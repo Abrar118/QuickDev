@@ -5,7 +5,11 @@ pub struct GlobalConfig {
     pub emulator: Option<String>,
     #[serde(default)]
     pub terminal_app_tabbing_prompt_declined: bool,
-    #[serde(default)]
+    // Skipped when empty so a freshly generated file has no `projects = []` line
+    // ahead of its `[...]` sections. Comments in a TOML document attach to the
+    // key that follows them, and a placeholder that later turns into
+    // `[[projects]]` drags the file's header comment down with it.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub projects: Vec<GlobalProjectEntry>,
 }
 
@@ -18,9 +22,10 @@ pub struct GlobalProjectEntry {
 #[derive(Debug, Serialize, Deserialize)]
 pub struct ProjectConfig {
     pub project: ProjectEntry,
-    #[serde(default)]
+    // See the note on `GlobalConfig::projects`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub terminals: Vec<TerminalEntry>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub applications: Vec<AppEntry>,
 }
 

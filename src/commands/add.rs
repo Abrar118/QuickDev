@@ -5,14 +5,15 @@ use crate::config::{load_project_config, resolve_project_config, save_project_co
 use crate::fzf;
 use crate::models::{AppEntry, ProjectConfig, TerminalEntry};
 use crate::parse;
+use crate::validate::{validate_app_entry, validate_terminal_entry};
 use std::path::PathBuf;
 
 pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
-    let (config_path, _root) = resolve_project_config(&cwd)?;
+    let (config_path, root) = resolve_project_config(&cwd)?;
     let mut config = load_project_config(&config_path)?;
 
-    match kind {
+    let announcement = match kind {
         Some(AddKind::Terminal {
             name,
             path,
@@ -22,34 +23,47 @@ pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
             if config.terminals.iter().any(|t| t.name == name) {
                 return Err(format!("terminal '{}' already exists", name));
             }
-            config.terminals.push(TerminalEntry {
+            let entry = TerminalEntry {
                 name: name.clone(),
                 path,
                 command,
                 emulator,
-            });
-            println!("Added terminal '{}'", name);
+            };
+            validate_terminal_entry(&entry, &root)?;
+            config.terminals.push(entry);
+            format!("Added terminal '{name}'")
         }
         Some(AddKind::App { name, path, args }) => {
             if config.applications.iter().any(|a| a.name == name) {
                 return Err(format!("application '{}' already exists", name));
             }
-            config.applications.push(AppEntry {
+            let entry = AppEntry {
                 name: name.clone(),
                 path,
                 args,
-            });
-            println!("Added application '{}'", name);
+            };
+            validate_app_entry(&entry)?;
+            config.applications.push(entry);
+            format!("Added application '{name}'")
         }
         None => {
-            return cmd_add_interactive(config_path, config);
+            return cmd_add_interactive(config_path, root, config);
         }
-    }
+    };
 
-    save_project_config(&config_path, &config)
+    // Only after the write succeeds: a save can fail (a concurrent invocation
+    // changed the file), and announcing the addition first would print "Added …"
+    // immediately above the error explaining that nothing was added.
+    save_project_config(&config_path, &config)?;
+    println!("{announcement}");
+    Ok(())
 }
 
-fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Result<(), String> {
+fn cmd_add_interactive(
+    config_path: PathBuf,
+    root: PathBuf,
+    mut config: ProjectConfig,
+) -> Result<(), String> {
     let types = vec!["Terminal".to_string(), "Application".to_string()];
     let selected = fzf::fzf_select_one(&types, "Select what to add:")?;
 
@@ -63,9 +77,6 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
             };
 
             let name = prompt("Name for this tab: ")?;
-            if name.is_empty() {
-                return Err("name cannot be empty".to_string());
-            }
             if config.terminals.iter().any(|t| t.name == name) {
                 return Err(format!("terminal '{}' already exists", name));
             }
@@ -79,12 +90,14 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
 
             let emulator = pick_emulator()?;
 
-            config.terminals.push(TerminalEntry {
+            let entry = TerminalEntry {
                 name: name.clone(),
                 path,
                 command,
                 emulator,
-            });
+            };
+            validate_terminal_entry(&entry, &root)?;
+            config.terminals.push(entry);
             save_project_config(&config_path, &config)?;
             println!("Added terminal '{name}'");
         }
@@ -105,11 +118,13 @@ fn cmd_add_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Resul
 
             let args = apps::combine_app_args(app.args, user_args);
 
-            config.applications.push(AppEntry {
+            let entry = AppEntry {
                 name: app.name.clone(),
                 path: app.path,
                 args,
-            });
+            };
+            validate_app_entry(&entry)?;
+            config.applications.push(entry);
             save_project_config(&config_path, &config)?;
             println!("Added application '{}'", app.name);
         }
@@ -148,16 +163,12 @@ fn pick_application() -> Result<AppEntry, String> {
         items.push(format!("{}  ({})", app.name, app.path));
     }
 
-    let selected = fzf::fzf_select_one(&items, "Select an application:")?;
-
-    // Map the selection back by its position in the presented list rather than
-    // re-parsing the display text: an app name may itself contain the "  ("
-    // separator, which would corrupt a string-split recovery. `items[0]` is the
-    // manual-entry row; `items[i + 1]` is `discovered[i]`.
-    let index = items
-        .iter()
-        .position(|item| item == &selected)
-        .ok_or_else(|| format!("selection '{selected}' not in the list"))?;
+    // Indexed picker: names and paths come from the filesystem, so a bundle
+    // named with a newline or tab could otherwise forge picker rows, and
+    // matching the returned text back against the list would fail for any name
+    // containing the "  (" separator. `items[0]` is the manual-entry row;
+    // `items[i + 1]` is `discovered[i]`.
+    let index = fzf::fzf_select_one_indexed(&items, "Select an application:")?;
 
     if index == 0 {
         return manual_app_entry();

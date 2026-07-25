@@ -316,6 +316,15 @@ fn render_results_formats_success_detail_and_failure() {
 fn plan_launch_marks_valid_items_success() {
     use quickdev::launch::plan_launch;
     use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry, TerminalEntry};
+    // Real paths: a dry run now reports what a launch would actually find, so
+    // fictitious ones would (correctly) plan as failures.
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    std::fs::create_dir(root.join("src")).unwrap();
+    let app_path = root.join("Cursor.app");
+    std::fs::create_dir(&app_path).unwrap();
+    let app_path = app_path.to_string_lossy().to_string();
+
     let config = ProjectConfig {
         project: ProjectEntry {
             name: "p".to_string(),
@@ -328,30 +337,97 @@ fn plan_launch_marks_valid_items_success() {
         }],
         applications: vec![AppEntry {
             name: "Cursor".to_string(),
-            path: "/Applications/Cursor.app".to_string(),
+            path: app_path.clone(),
             args: None,
         }],
     };
-    let plan = plan_launch(&config, Path::new("/home/user/project"));
+    let plan = plan_launch(&config, root);
     assert_eq!(plan.len(), 2);
     assert!(plan[0].success);
     // Normalize separators: the resolved terminal path uses `\` on Windows.
     assert_eq!(
         plan[0].detail.as_deref().map(|d| d.replace('\\', "/")),
-        Some("/home/user/project/src · npm run dev".to_string())
+        Some(format!(
+            "{} · npm run dev",
+            root.join("src").to_string_lossy().replace('\\', "/")
+        ))
     );
     assert!(plan[1].success);
     // Cursor is an editor tool with no args — detail should include project root.
     assert_eq!(
         plan[1].detail.as_deref(),
-        Some("/Applications/Cursor.app · args: /home/user/project")
+        Some(format!("{app_path} · args: {}", root.to_string_lossy()).as_str())
     );
+}
+
+#[test]
+fn plan_launch_reports_items_a_real_launch_could_not_find() {
+    use quickdev::launch::plan_launch;
+    use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry, TerminalEntry};
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![TerminalEntry {
+            name: "dev".to_string(),
+            path: "./missing".to_string(),
+            command: None,
+            emulator: None,
+        }],
+        applications: vec![AppEntry {
+            name: "Nope".to_string(),
+            path: "/definitely/not/installed.app".to_string(),
+            args: None,
+        }],
+    };
+
+    let plan = plan_launch(&config, root);
+    assert!(!plan[0].success, "a missing directory is not launchable");
+    assert!(
+        !plan[1].success,
+        "an app that is neither on disk nor on PATH is not launchable"
+    );
+}
+
+#[test]
+fn plan_launch_accepts_an_application_resolved_from_path() {
+    use quickdev::launch::plan_launch;
+    use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry};
+
+    let temp = tempfile::tempdir().unwrap();
+
+    // A bare command name, as Linux desktop entries use (e.g. `flatpak`).
+    // `Command::new` resolves these through PATH, so validation must too.
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![AppEntry {
+            name: "shell".to_string(),
+            path: "sh".to_string(),
+            args: None,
+        }],
+    };
+
+    let plan = plan_launch(&config, temp.path());
+    assert!(plan[0].success);
 }
 
 #[test]
 fn plan_launch_includes_resolved_app_args_in_detail() {
     use quickdev::launch::plan_launch;
     use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry};
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    let app_path = root.join("Cursor.app");
+    std::fs::create_dir(&app_path).unwrap();
+    let app_path = app_path.to_string_lossy().to_string();
+
     let config = ProjectConfig {
         project: ProjectEntry {
             name: "p".to_string(),
@@ -359,18 +435,18 @@ fn plan_launch_includes_resolved_app_args_in_detail() {
         terminals: vec![],
         applications: vec![AppEntry {
             name: "Cursor".to_string(),
-            path: "/Applications/Cursor.app".to_string(),
+            path: app_path.clone(),
             args: Some(vec![".".to_string(), "--flag".to_string()]),
         }],
     };
 
-    let plan = plan_launch(&config, Path::new("/home/user/project"));
+    let plan = plan_launch(&config, root);
 
     assert_eq!(plan.len(), 1);
     assert!(plan[0].success);
     assert_eq!(
         plan[0].detail.as_deref(),
-        Some("/Applications/Cursor.app · args: /home/user/project --flag")
+        Some(format!("{app_path} · args: {} --flag", root.to_string_lossy()).as_str())
     );
 }
 
@@ -880,4 +956,49 @@ fn terminal_path_must_exist_on_disk() {
     assert!(escaping.contains("must stay inside the project root"));
 
     std::fs::remove_dir_all(&root).ok();
+}
+
+#[test]
+fn only_pre_start_tab_failures_may_be_retried() {
+    use quickdev::launch::TabLaunchFailure;
+
+    // Nothing was launched, so re-launching the terminals one window at a time
+    // runs each startup command exactly once.
+    assert!(TabLaunchFailure::NotStarted("kitty not found".into()).may_retry());
+
+    // The emulator ran and then failed. Tabs may already be open with their
+    // startup commands executing; a retry would run every command twice.
+    assert!(!TabLaunchFailure::PossiblyStarted("osascript error".into()).may_retry());
+}
+
+#[test]
+fn tab_launch_failure_message_is_preserved_for_reporting() {
+    use quickdev::launch::TabLaunchFailure;
+
+    assert_eq!(
+        TabLaunchFailure::PossiblyStarted("Automation denied".into()).message(),
+        "Automation denied"
+    );
+    assert_eq!(
+        TabLaunchFailure::NotStarted("mixed terminal emulators cannot share tabs".into()).message(),
+        "mixed terminal emulators cannot share tabs"
+    );
+}
+
+#[test]
+fn a_terminal_path_pointing_at_a_file_is_rejected() {
+    use quickdev::launch::resolve_existing_terminal_path;
+
+    let temp = tempfile::tempdir().unwrap();
+    let root = temp.path();
+    std::fs::write(root.join("notes.txt"), "hi").unwrap();
+    std::fs::create_dir(root.join("src")).unwrap();
+
+    assert!(resolve_existing_terminal_path(root, "src").is_ok());
+
+    // A file resolves and exists, but cannot be a working directory: accepting
+    // it only defers the failure to the tab's `cd`, which a grouped launch
+    // cannot observe.
+    let err = resolve_existing_terminal_path(root, "notes.txt").unwrap_err();
+    assert!(err.starts_with("path is not a directory:"), "got: {err}");
 }

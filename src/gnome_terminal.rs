@@ -78,16 +78,13 @@ pub fn build_load_config(tabs: &[LoadConfigTab<'_>]) -> String {
 /// path of the load-config file. Exposed for testing.
 #[cfg(target_os = "linux")]
 pub fn write_session(dir: &Path, tabs: &[GnomeTab<'_>]) -> Result<PathBuf, String> {
-    use std::os::unix::fs::PermissionsExt;
+    use crate::session_dir::write_new;
 
     let mut config_tabs: Vec<(String, String)> = Vec::with_capacity(tabs.len());
     for (i, tab) in tabs.iter().enumerate() {
         let wrapper_path = dir.join(format!("tab{i}.sh"));
         let body = build_wrapper_script(tab.cwd, tab.command);
-        std::fs::write(&wrapper_path, body)
-            .map_err(|e| format!("failed to write wrapper script: {e}"))?;
-        std::fs::set_permissions(&wrapper_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("failed to chmod wrapper script: {e}"))?;
+        write_new(&wrapper_path, &body, 0o700)?;
         config_tabs.push((
             tab.title.to_string(),
             wrapper_path.to_string_lossy().into_owned(),
@@ -102,38 +99,54 @@ pub fn write_session(dir: &Path, tabs: &[GnomeTab<'_>]) -> Result<PathBuf, Strin
         })
         .collect();
     let conf_path = dir.join("tabs.conf");
-    std::fs::write(&conf_path, build_load_config(&load_config_tabs))
-        .map_err(|e| format!("failed to write load-config file: {e}"))?;
+    write_new(&conf_path, &build_load_config(&load_config_tabs), 0o600)?;
     Ok(conf_path)
 }
 
 /// Open one gnome-terminal window with one tab per `tabs` entry via
 /// `--load-config`. Status-checked: a non-zero exit is reported as an error so
-/// the caller can fall back to per-terminal windows.
+/// the caller can decide whether falling back to per-terminal windows is safe.
 #[cfg(target_os = "linux")]
-pub fn launch_gnome_terminal_load_config(tabs: &[GnomeTab<'_>]) -> Result<(), String> {
-    if tabs.is_empty() {
-        return Err("no terminals to launch".to_string());
-    }
-    let dir = std::env::temp_dir().join(format!("quickdev-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create temp dir: {e}"))?;
-    let conf = write_session(&dir, tabs)?;
+pub fn launch_gnome_terminal_load_config(
+    tabs: &[GnomeTab<'_>],
+) -> Result<(), crate::launch::TabLaunchFailure> {
+    use crate::launch::TabLaunchFailure;
 
-    let resolved =
-        resolve_command("gnome-terminal").ok_or("gnome-terminal not found".to_string())?;
-    let output = Command::new(resolved)
+    if tabs.is_empty() {
+        return Err(TabLaunchFailure::NotStarted(
+            "no terminals to launch".to_string(),
+        ));
+    }
+    let dir = crate::session_dir::create_session_dir().map_err(TabLaunchFailure::NotStarted)?;
+    let conf = write_session(&dir, tabs).map_err(TabLaunchFailure::NotStarted)?;
+
+    let resolved = resolve_command("gnome-terminal")
+        .ok_or_else(|| TabLaunchFailure::NotStarted("gnome-terminal not found".to_string()))?;
+    // Spawn and wait separately, not `.output()`: only a failed spawn proves
+    // nothing ran. A failure while waiting happens after gnome-terminal has
+    // started walking the keyfile and opening tabs, so it is not retry-safe.
+    let child = Command::new(resolved)
         .arg(format!("--load-config={}", conf.display()))
         .stdout(Stdio::null())
-        .output()
-        .map_err(|e| format!("gnome-terminal launch failed: {e}"))?;
+        .stderr(Stdio::piped())
+        .spawn()
+        .map_err(|e| {
+            TabLaunchFailure::NotStarted(format!("could not start gnome-terminal: {e}"))
+        })?;
+    let output = child.wait_with_output().map_err(|e| {
+        TabLaunchFailure::PossiblyStarted(format!("lost track of gnome-terminal: {e}"))
+    })?;
     if output.status.success() {
         return Ok(());
     }
+    // gnome-terminal ran and reported failure. It opens tabs as it walks the
+    // keyfile, so an unknown number may already be running their commands.
     let detail = String::from_utf8_lossy(&output.stderr);
     let detail = detail.trim();
-    if detail.is_empty() {
-        Err("gnome-terminal --load-config reported an error".to_string())
+    let detail = if detail.is_empty() {
+        "gnome-terminal --load-config reported an error"
     } else {
-        Err(detail.to_string())
-    }
+        detail
+    };
+    Err(TabLaunchFailure::PossiblyStarted(detail.to_string()))
 }

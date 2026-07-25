@@ -81,8 +81,8 @@ fn write_session_creates_executable_wrappers_and_conf() {
     use quickdev::gnome_terminal::{write_session, GnomeTab};
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = std::env::temp_dir().join(format!("quickdev-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
 
     let tabs = [
         GnomeTab {
@@ -96,7 +96,7 @@ fn write_session_creates_executable_wrappers_and_conf() {
             command: None,
         },
     ];
-    let conf = write_session(&dir, &tabs).unwrap();
+    let conf = write_session(dir, &tabs).unwrap();
 
     assert!(conf.exists());
     let conf_body = std::fs::read_to_string(&conf).unwrap();
@@ -105,10 +105,13 @@ fn write_session_creates_executable_wrappers_and_conf() {
     let tab0 = dir.join("tab0.sh");
     assert!(tab0.exists());
     let mode = std::fs::metadata(&tab0).unwrap().permissions().mode();
-    assert_eq!(mode & 0o777, 0o755);
+    assert_eq!(mode & 0o777, 0o700);
     let body0 = std::fs::read_to_string(&tab0).unwrap();
     assert!(body0.contains("cd '/tmp'"));
     assert!(body0.contains("echo hi"));
 
-    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(
+        std::fs::metadata(&conf).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
 }

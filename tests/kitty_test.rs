@@ -92,8 +92,8 @@ fn write_session_creates_executable_wrappers_and_session_file() {
     use quickdev::kitty::{write_session, KittyTab};
     use std::os::unix::fs::PermissionsExt;
 
-    let dir = std::env::temp_dir().join(format!("quickdev-kitty-test-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).unwrap();
+    let temp = tempfile::tempdir().unwrap();
+    let dir = temp.path();
 
     let tabs = [
         KittyTab {
@@ -107,7 +107,7 @@ fn write_session_creates_executable_wrappers_and_session_file() {
             command: None,
         },
     ];
-    let session = write_session(&dir, &tabs).unwrap();
+    let session = write_session(dir, &tabs).unwrap();
 
     assert!(session.exists());
     let body = std::fs::read_to_string(&session).unwrap();
@@ -116,11 +116,38 @@ fn write_session_creates_executable_wrappers_and_session_file() {
 
     let tab0 = dir.join("tab0.sh");
     assert!(tab0.exists());
+    // Owner-only: the wrapper is executed by this user's terminal, and nobody
+    // else has any business reading or replacing it.
     let mode = std::fs::metadata(&tab0).unwrap().permissions().mode();
-    assert_eq!(mode & 0o777, 0o755);
+    assert_eq!(mode & 0o777, 0o700);
     let body0 = std::fs::read_to_string(&tab0).unwrap();
     assert!(body0.contains("cd '/tmp'"));
     assert!(body0.contains("echo hi"));
 
-    std::fs::remove_dir_all(&dir).ok();
+    assert_eq!(
+        std::fs::metadata(&session).unwrap().permissions().mode() & 0o777,
+        0o600
+    );
+}
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+#[test]
+fn write_session_refuses_to_overwrite_an_existing_wrapper_path() {
+    use quickdev::kitty::{write_session, KittyTab};
+
+    // Stands in for a wrapper path an attacker pre-created (in the real threat
+    // model, as a symlink to a file they want QuickDev to clobber).
+    let temp = tempfile::tempdir().unwrap();
+    std::fs::write(temp.path().join("tab0.sh"), "planted").unwrap();
+
+    let tabs = [KittyTab {
+        title: "api",
+        cwd: "/tmp",
+        command: None,
+    }];
+    assert!(write_session(temp.path(), &tabs).is_err());
+    assert_eq!(
+        std::fs::read_to_string(temp.path().join("tab0.sh")).unwrap(),
+        "planted"
+    );
 }

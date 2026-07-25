@@ -20,6 +20,8 @@ mod kitty;
 mod launch;
 mod models;
 mod parse;
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+mod session_dir;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 #[cfg(any(target_os = "macos", target_os = "linux"))]
 mod tab_strategy;

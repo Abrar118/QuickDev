@@ -76,16 +76,13 @@ pub fn write_session(
     tabs: &[KittyTab<'_>],
 ) -> Result<std::path::PathBuf, String> {
     use crate::gnome_terminal::build_wrapper_script;
-    use std::os::unix::fs::PermissionsExt;
+    use crate::session_dir::write_new;
 
     let mut session_tabs: Vec<(String, String)> = Vec::with_capacity(tabs.len());
     for (i, tab) in tabs.iter().enumerate() {
         let wrapper_path = dir.join(format!("tab{i}.sh"));
         let body = build_wrapper_script(tab.cwd, tab.command);
-        std::fs::write(&wrapper_path, body)
-            .map_err(|e| format!("failed to write wrapper script: {e}"))?;
-        std::fs::set_permissions(&wrapper_path, std::fs::Permissions::from_mode(0o755))
-            .map_err(|e| format!("failed to chmod wrapper script: {e}"))?;
+        write_new(&wrapper_path, &body, 0o700)?;
         session_tabs.push((
             tab.title.to_string(),
             wrapper_path.to_string_lossy().into_owned(),
@@ -100,8 +97,7 @@ pub fn write_session(
         })
         .collect();
     let session_path = dir.join("session.kitty");
-    std::fs::write(&session_path, build_session(&session_tabs_ref))
-        .map_err(|e| format!("failed to write session file: {e}"))?;
+    write_new(&session_path, &build_session(&session_tabs_ref), 0o600)?;
     Ok(session_path)
 }
 
@@ -120,8 +116,7 @@ pub fn launch_kitty_session(tabs: &[KittyTab<'_>]) -> Result<(), String> {
     if tabs.is_empty() {
         return Err("no terminals to launch".to_string());
     }
-    let dir = std::env::temp_dir().join(format!("quickdev-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create temp dir: {e}"))?;
+    let dir = crate::session_dir::create_session_dir()?;
     let session = write_session(&dir, tabs)?;
 
     let resolved = resolve_kitty().ok_or("kitty not found".to_string())?;

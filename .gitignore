@@ -4,6 +4,7 @@
 /docs/
 /.claude/
 .quickdev.toml
+.quickdev.toml.lock
 AGENTS.md
 CLAUDE.md
 

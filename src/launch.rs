@@ -41,6 +41,43 @@ pub struct LaunchResult {
     pub detail: Option<String>,
 }
 
+/// Why a grouped (tabbed) launch failed, and whether retrying it is safe.
+///
+/// A batch launch is not atomic. AppleScript and `gnome-terminal --load-config`
+/// are status-checked only once the whole script has run, so an error can arrive
+/// *after* tabs were opened and their startup commands submitted. Re-launching
+/// those terminals one window at a time would run every command a second time —
+/// and a startup command may be a migration, a deploy, or a queue worker. Only
+/// failures that provably happened before the emulator acted may fall back.
+#[derive(Debug)]
+pub enum TabLaunchFailure {
+    /// Capability probing, session-file writing, or process spawn failed before
+    /// the emulator could open anything. Falling back to one window per terminal
+    /// is safe.
+    NotStarted(String),
+    /// The emulator ran and then reported an error. An unknown number of tabs
+    /// may already be open with their commands running.
+    ///
+    /// Only the macOS (AppleScript) and Linux (gnome-terminal) launchers can
+    /// report this; Windows tab launches fail before spawning, so the variant is
+    /// unconstructed there.
+    #[cfg_attr(windows, allow(dead_code))]
+    PossiblyStarted(String),
+}
+
+impl TabLaunchFailure {
+    /// Whether the caller may launch these terminals individually instead.
+    pub fn may_retry(&self) -> bool {
+        matches!(self, Self::NotStarted(_))
+    }
+
+    pub fn message(&self) -> &str {
+        match self {
+            Self::NotStarted(m) | Self::PossiblyStarted(m) => m,
+        }
+    }
+}
+
 /// Render a launch/plan summary: a header line followed by one ✓/✗ line per
 /// item. Success lines append ` — {detail}` when a detail is present; failure
 /// lines append ` — {error}`. Returns the full block (trailing newline included).
@@ -206,12 +243,15 @@ fn app_detail(path: &str, args: Option<&[String]>) -> String {
 }
 
 /// Resolve what `launch_project` would launch, without spawning anything.
-/// Terminals that fail path resolution (e.g. escaping the project root) are
-/// returned as failures; everything else is a success carrying its `detail`.
+///
+/// Applies the same checks the real launch does — a terminal path must resolve
+/// to a directory inside the project, and an application must exist on disk or
+/// be a command on `PATH` — so a dry run reports the failures a launch would hit
+/// rather than a blanket success.
 pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchResult> {
     let mut results = Vec::new();
     for terminal in &config.terminals {
-        match resolve_terminal_path(project_root, &terminal.path) {
+        match resolve_existing_terminal_path(project_root, &terminal.path) {
             Ok(resolved_path) => results.push(LaunchResult {
                 label: terminal.name.clone(),
                 kind: "terminal",
@@ -237,11 +277,17 @@ pub fn plan_launch(config: &ProjectConfig, project_root: &Path) -> Vec<LaunchRes
             .map(|a| resolve_app_args(a, &placeholder_ctx));
         let effective_args =
             effective_app_args(&app.name, &app.path, resolved_args.as_deref(), &root_str);
+        let launchable = crate::validate::app_target_resolvable(&app.path);
         results.push(LaunchResult {
             label: app.name.clone(),
             kind: "app",
-            success: true,
-            error: None,
+            success: launchable,
+            error: (!launchable).then(|| {
+                format!(
+                    "path does not exist and is not on PATH: {}",
+                    app.path.clone()
+                )
+            }),
             detail: Some(app_detail(&app.path, effective_args.as_deref())),
         });
     }
@@ -307,23 +353,49 @@ pub fn launch_project(
         });
     }
 
-    let tabs_launched = if prepared_terminals.len() > 1 {
-        launch_terminal_tabs(&prepared_terminals, global_emulator).is_ok()
+    let tab_outcome = if prepared_terminals.len() > 1 {
+        Some(launch_terminal_tabs(&prepared_terminals, global_emulator))
     } else {
-        false
+        None
     };
 
-    if tabs_launched {
-        for terminal in &prepared_terminals {
-            terminal_results[terminal.original_index] = Some(LaunchResult {
-                label: terminal.name.clone(),
-                kind: "terminal",
-                success: true,
-                error: None,
-                detail: Some(terminal_detail(&terminal.path, terminal.command.as_deref())),
-            });
+    // `None` means tabbing was never attempted (fewer than two terminals).
+    let fall_back = match &tab_outcome {
+        Some(Ok(())) => {
+            for terminal in &prepared_terminals {
+                terminal_results[terminal.original_index] = Some(LaunchResult {
+                    label: terminal.name.clone(),
+                    kind: "terminal",
+                    success: true,
+                    error: None,
+                    detail: Some(terminal_detail(&terminal.path, terminal.command.as_deref())),
+                });
+            }
+            false
         }
-    } else {
+        // The emulator already started: some tabs may be open with their startup
+        // commands running. Report the group as failed rather than re-launching
+        // and risking a second execution of every command.
+        Some(Err(failure)) if !failure.may_retry() => {
+            let error = format!(
+                "tab launch failed after the terminal started ({}); not retried — some tabs may already be open",
+                failure.message()
+            );
+            for terminal in &prepared_terminals {
+                terminal_results[terminal.original_index] = Some(LaunchResult {
+                    label: terminal.name.clone(),
+                    kind: "terminal",
+                    success: false,
+                    error: Some(error.clone()),
+                    detail: Some(terminal_detail(&terminal.path, terminal.command.as_deref())),
+                });
+            }
+            false
+        }
+        Some(Err(_)) | None => true,
+    };
+
+    if fall_back {
         for (launch_index, terminal) in prepared_terminals.iter().enumerate() {
             if launch_index > 0 {
                 std::thread::sleep(std::time::Duration::from_millis(100));
@@ -361,6 +433,7 @@ pub fn launch_project(
         }
     }
 
+    let tabs_launched = matches!(&tab_outcome, Some(Ok(())));
     if !prepared_terminals.is_empty() && tabs_launched && !emulator_was_running {
         if let Some(name) = watch {
             wait_for_emulator_ready(name);
@@ -401,7 +474,7 @@ struct PreparedTerminal {
 fn launch_terminal_tabs(
     terminals: &[PreparedTerminal],
     global_emulator: Option<&str>,
-) -> Result<(), String> {
+) -> Result<(), TabLaunchFailure> {
     let first_emulator = terminals
         .first()
         .and_then(|t| t.emulator.as_deref())
@@ -410,7 +483,9 @@ fn launch_terminal_tabs(
         .iter()
         .all(|t| t.emulator.as_deref().or(global_emulator) == first_emulator)
     {
-        return Err("mixed terminal emulators cannot share tabs".to_string());
+        return Err(TabLaunchFailure::NotStarted(
+            "mixed terminal emulators cannot share tabs".to_string(),
+        ));
     }
 
     #[cfg(target_os = "macos")]
@@ -422,7 +497,9 @@ fn launch_terminal_tabs(
             TabStrategy::TerminalAppTab => launch_terminal_app_tabs(terminals),
             TabStrategy::CliTab
             | TabStrategy::GnomeTerminalLoadConfig
-            | TabStrategy::WindowOnly => Err("unsupported tab emulator".to_string()),
+            | TabStrategy::WindowOnly => Err(TabLaunchFailure::NotStarted(
+                "unsupported tab emulator".to_string(),
+            )),
         }
     }
 
@@ -442,7 +519,9 @@ fn launch_terminal_tabs(
                     .collect();
                 launch_gnome_terminal_load_config(&tabs)
             }
-            _ => Err("unsupported tab emulator".to_string()),
+            _ => Err(TabLaunchFailure::NotStarted(
+                "unsupported tab emulator".to_string(),
+            )),
         }
     }
 
@@ -450,14 +529,16 @@ fn launch_terminal_tabs(
     {
         let _ = terminals;
         let _ = global_emulator;
-        Err("batch tabs are only handled on macOS and Linux (gnome-terminal)".to_string())
+        Err(TabLaunchFailure::NotStarted(
+            "batch tabs are only handled on macOS and Linux (gnome-terminal)".to_string(),
+        ))
     }
 }
 
 /// Group the prepared terminals into one kitty window via a `--session` file.
 /// Shared by macOS and Linux — kitty's session format is identical on both.
 #[cfg(any(target_os = "macos", target_os = "linux"))]
-fn launch_kitty_tabs(terminals: &[PreparedTerminal]) -> Result<(), String> {
+fn launch_kitty_tabs(terminals: &[PreparedTerminal]) -> Result<(), TabLaunchFailure> {
     let tabs: Vec<KittyTab<'_>> = terminals
         .iter()
         .map(|t| KittyTab {
@@ -466,7 +547,9 @@ fn launch_kitty_tabs(terminals: &[PreparedTerminal]) -> Result<(), String> {
             command: t.command.as_deref(),
         })
         .collect();
-    launch_kitty_session(&tabs)
+    // kitty is spawned fire-and-forget: every failure path (session write, binary
+    // lookup, spawn) happens before kitty can open anything.
+    launch_kitty_session(&tabs).map_err(TabLaunchFailure::NotStarted)
 }
 
 #[cfg(target_os = "linux")]
@@ -520,7 +603,7 @@ fn ghostty_applescript_enabled() -> bool {
 }
 
 #[cfg(target_os = "macos")]
-fn launch_ghostty_applescript_tabs(terminals: &[PreparedTerminal]) -> Result<(), String> {
+fn launch_ghostty_applescript_tabs(terminals: &[PreparedTerminal]) -> Result<(), TabLaunchFailure> {
     let resolved: Vec<ResolvedTerminal<'_>> = terminals
         .iter()
         .map(|terminal| ResolvedTerminal {
@@ -528,12 +611,12 @@ fn launch_ghostty_applescript_tabs(terminals: &[PreparedTerminal]) -> Result<(),
             command: terminal.command.as_deref(),
         })
         .collect();
-    let script = build_ghostty_script(&resolved)?;
-    run_osascript(&script).map_err(|e| format!("Ghostty AppleScript tabs failed: {e}"))
+    let script = build_ghostty_script(&resolved).map_err(TabLaunchFailure::NotStarted)?;
+    run_osascript(&script, "Ghostty AppleScript tabs")
 }
 
 #[cfg(target_os = "macos")]
-fn launch_terminal_app_tabs(terminals: &[PreparedTerminal]) -> Result<(), String> {
+fn launch_terminal_app_tabs(terminals: &[PreparedTerminal]) -> Result<(), TabLaunchFailure> {
     let resolved: Vec<ResolvedTerminal<'_>> = terminals
         .iter()
         .map(|terminal| ResolvedTerminal {
@@ -545,32 +628,62 @@ fn launch_terminal_app_tabs(terminals: &[PreparedTerminal]) -> Result<(), String
         Some(TabbingPreference::Always) => build_auto_tab_script(&resolved),
         _ => build_system_events_tab_script(&resolved),
     };
-    run_osascript(&script).map_err(|e| format!("Terminal.app tab launch failed: {e}"))
+    run_osascript(&script, "Terminal.app tab launch")
 }
 
 #[cfg(target_os = "macos")]
-fn run_osascript(script: &str) -> Result<(), String> {
+fn run_osascript(script: &str, what: &str) -> Result<(), TabLaunchFailure> {
     // Wait for osascript and inspect its exit status: a failing AppleScript
     // (e.g. Automation/Accessibility not yet granted, or a script error) exits
     // non-zero. We must surface that so the caller falls back to separate
     // windows instead of reporting phantom success. `.spawn()` would ignore it.
-    let output = Command::new("osascript")
+    //
+    // Spawn and wait are separate calls rather than one `.output()`: only a
+    // failed *spawn* proves nothing ran. `.output()` collapses both into one
+    // error, so a failure while waiting or reading the pipes — after osascript
+    // has already started opening tabs — would be misreported as retry-safe.
+    let child = Command::new("osascript")
         .args(["-e", script])
-        .output()
-        .map_err(|e| format!("osascript failed: {e}"))?;
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::piped())
+        .spawn();
+    let child = match child {
+        Ok(child) => child,
+        // osascript itself never started, so no tab was opened.
+        Err(e) => {
+            return Err(TabLaunchFailure::NotStarted(format!(
+                "{what} failed: could not start osascript: {e}"
+            )))
+        }
+    };
+    let output = match child.wait_with_output() {
+        Ok(output) => output,
+        // osascript was running; we simply lost track of it.
+        Err(e) => {
+            return Err(TabLaunchFailure::PossiblyStarted(format!(
+                "{what} failed: lost track of osascript: {e}"
+            )))
+        }
+    };
     if output.status.success() {
         return Ok(());
     }
+    // The script ran and failed somewhere inside. AppleScript is not
+    // transactional: statements before the failing one have already opened tabs
+    // and submitted their commands, so this is never safe to retry.
     let detail = String::from_utf8_lossy(&output.stderr);
     let detail = detail.trim();
-    if detail.is_empty() {
-        Err("osascript reported an error".to_string())
+    let detail = if detail.is_empty() {
+        "osascript reported an error"
     } else {
-        Err(detail.to_string())
-    }
+        detail
+    };
+    Err(TabLaunchFailure::PossiblyStarted(format!(
+        "{what} failed: {detail}"
+    )))
 }
 
-/// Resolve a terminal's configured path and confirm the directory is on disk.
+/// Resolve a terminal's configured path and confirm it is a directory on disk.
 ///
 /// Grouped (tabbed) launches hand every directory to the emulator in a single
 /// invocation, so there is no per-terminal error to observe: a missing directory
@@ -582,8 +695,15 @@ pub fn resolve_existing_terminal_path(
     relative_path: &str,
 ) -> Result<String, String> {
     let resolved = resolve_terminal_path(project_root, relative_path)?;
-    if !Path::new(&resolved).exists() {
+    let target = Path::new(&resolved);
+    if !target.exists() {
         return Err(format!("path not found: {resolved}"));
+    }
+    // A terminal's path becomes the tab's working directory, so a regular file
+    // is never usable — accepting it only defers the failure to the tab's `cd`,
+    // where a grouped launch cannot observe it.
+    if !target.is_dir() {
+        return Err(format!("path is not a directory: {resolved}"));
     }
     Ok(resolved)
 }
@@ -819,7 +939,9 @@ fn run_in_platform_terminal(
         // Use the status-checking helper, not a fire-and-forget spawn: a denied
         // Automation permission makes osascript exit non-zero, and we must
         // report that as a failure rather than phantom success.
-        run_osascript(&script).map_err(|e| format!("Terminal.app launch failed: {e}"))
+        // Single-window launch: the started/not-started distinction only matters
+        // for grouped launches, which are the ones that get retried.
+        run_osascript(&script, "Terminal.app launch").map_err(|e| e.message().to_string())
     }
 
     #[cfg(target_os = "windows")]
