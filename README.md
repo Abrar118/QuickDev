@@ -311,7 +311,14 @@ System Events.
 
 ### Project Config — `.quickdev.toml`
 
-Each project has a `.quickdev.toml` in its root directory:
+Each project has a `.quickdev.toml` in its root directory.
+
+QuickDev edits this file in place, so your comments and any keys it does not
+recognize are preserved. Alongside it you will see an empty `.quickdev.toml.lock`
+— a lock file QuickDev holds only while writing, so two commands running at once
+cannot overwrite each other. It is machine-local and is left in place even after
+`quickdev deregister --delete` (removing it could let two processes each think
+they hold the lock). Add it to your `.gitignore` next to `.quickdev.toml`.
 
 ```toml
 [project]
@@ -463,6 +470,13 @@ When launching applications, QuickDev auto-detects known tools and uses their CL
 | Zed | name/path contains "zed" | `zed` | Opens project root |
 
 Editors automatically receive the project root as an argument. Unknown applications are launched generically (via `open -a` on macOS, direct execution elsewhere).
+
+Detection is used in two places, and they are deliberately not the same. Deciding
+whether to *pass the project root* considers both the name and the path (the
+table above). Deciding whether to *substitute the tool's CLI* (`code`, `cursor`,
+`zed`) at launch time considers **the path only** — a wrapper such as a Flatpak,
+Snap, or Squirrel `Update.exe` whose display name merely matches must run through
+its own saved arguments, not through the editor CLI.
 
 ## Path Resolution
 

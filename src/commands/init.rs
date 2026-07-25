@@ -70,7 +70,12 @@ pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
         name: project_name.clone(),
         path: cwd_str,
     });
-    save_global_config(&global_path, &global)?;
+    if let Err(e) = save_global_config(&global_path, &global) {
+        // Roll back the config we just created rather than leaving an
+        // unregistered .quickdev.toml that a retried `init` would refuse.
+        let _ = std::fs::remove_file(&config_path);
+        return Err(e);
+    }
 
     if from.is_some() {
         println!(

@@ -1,5 +1,5 @@
 use crate::cli::RemoveKind;
-use crate::commands::shared::{build_item_display_list, parse_selected_items};
+use crate::commands::shared::{build_item_display_list, selected_items};
 use crate::config::{load_project_config, resolve_project_config, save_project_config};
 use crate::fzf;
 use crate::models::ProjectConfig;
@@ -10,14 +10,14 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
     let (config_path, _root) = resolve_project_config(&cwd)?;
     let mut config = load_project_config(&config_path)?;
 
-    match kind {
+    let announcement = match kind {
         Some(RemoveKind::Terminal { name }) => {
             let before = config.terminals.len();
             config.terminals.retain(|t| t.name != name);
             if config.terminals.len() == before {
                 return Err(format!("terminal '{}' not found", name));
             }
-            println!("Removed terminal '{}'", name);
+            format!("Removed terminal '{name}'")
         }
         Some(RemoveKind::App { name }) => {
             let before = config.applications.len();
@@ -25,14 +25,17 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
             if config.applications.len() == before {
                 return Err(format!("application '{}' not found", name));
             }
-            println!("Removed application '{}'", name);
+            format!("Removed application '{name}'")
         }
         None => {
             return cmd_remove_interactive(config_path, config);
         }
-    }
+    };
 
-    save_project_config(&config_path, &config)
+    // Announce only once the write succeeded — see the note in `add`.
+    save_project_config(&config_path, &config)?;
+    println!("{announcement}");
+    Ok(())
 }
 
 fn cmd_remove_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Result<(), String> {
@@ -42,19 +45,34 @@ fn cmd_remove_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Re
         return Err("no terminals or applications configured".to_string());
     }
 
-    let selected = fzf::fzf_select_multi(
+    let picked = fzf::fzf_select_multi_indexed(
         &items,
         "Select items to remove (TAB to toggle, ENTER to confirm):",
     )?;
 
-    let (removed_terminals, removed_apps) = parse_selected_items(&selected);
+    let (terminal_indices, app_indices) = selected_items(&config, &picked);
 
-    config
-        .terminals
-        .retain(|t| !removed_terminals.contains(&t.name));
-    config
-        .applications
-        .retain(|a| !removed_apps.contains(&a.name));
+    let removed_terminals: Vec<String> = terminal_indices
+        .iter()
+        .map(|&i| config.terminals[i].name.clone())
+        .collect();
+    let removed_apps: Vec<String> = app_indices
+        .iter()
+        .map(|&i| config.applications[i].name.clone())
+        .collect();
+
+    let mut index = 0;
+    config.terminals.retain(|_| {
+        let keep = !terminal_indices.contains(&index);
+        index += 1;
+        keep
+    });
+    let mut index = 0;
+    config.applications.retain(|_| {
+        let keep = !app_indices.contains(&index);
+        index += 1;
+        keep
+    });
 
     save_project_config(&config_path, &config)?;
 

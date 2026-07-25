@@ -44,10 +44,10 @@ pub(crate) fn cmd_capture(all: bool) -> Result<(), String> {
 }
 
 /// Choose which candidate apps to add. With `all`, take everything; otherwise
-/// fzf multi-select. Each line is prefixed with its candidate index ("0\tName —
-/// path") and selections are mapped back by that leading index, so a tab in an
-/// app name or path can't corrupt the round-trip. An empty/cancelled selection
-/// surfaces as the `fzf::CANCELLED` sentinel.
+/// fzf multi-select through the shared indexed picker, which hides the index
+/// column, sanitizes control characters out of the display text, and errors on a
+/// row it cannot map rather than silently dropping it. An empty/cancelled
+/// selection surfaces as the `fzf::CANCELLED` sentinel.
 fn select_apps(candidates: &[AppEntry], all: bool) -> Result<Vec<AppEntry>, String> {
     if all {
         return Ok(candidates.to_vec());
@@ -60,22 +60,11 @@ fn select_apps(candidates: &[AppEntry], all: bool) -> Result<Vec<AppEntry>, Stri
     }
     let items: Vec<String> = candidates
         .iter()
-        .enumerate()
-        .map(|(i, a)| format!("{i}\t{} — {}", a.name, a.path))
+        .map(|a| format!("{} — {}", a.name, a.path))
         .collect();
-    let picked = fzf::fzf_select_multi(
+    let picked = fzf::fzf_select_multi_indexed(
         &items,
         "Select apps to capture (TAB to toggle, ENTER to confirm):",
     )?;
-    let picked_indices: Vec<usize> = picked
-        .iter()
-        .filter_map(|line| line.split('\t').next())
-        .filter_map(|idx| idx.parse::<usize>().ok())
-        .collect();
-    Ok(candidates
-        .iter()
-        .enumerate()
-        .filter(|(i, _)| picked_indices.contains(i))
-        .map(|(_, a)| a.clone())
-        .collect())
+    Ok(picked.into_iter().map(|i| candidates[i].clone()).collect())
 }

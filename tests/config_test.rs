@@ -1,7 +1,7 @@
 use quickdev::config::{
-    find_project_config, load_global_config, load_project_config, parse_project_selection,
-    register_existing_project_config, resolve_project_config, save_global_config,
-    save_project_config, unique_project_name,
+    find_project_config, load_global_config, load_project_config, register_existing_project_config,
+    remove_config_with, resolve_project_config, save_global_config, save_project_config,
+    unique_project_name,
 };
 use quickdev::models::{
     GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
@@ -203,24 +203,6 @@ fn resolve_project_config_finds_local() {
 }
 
 #[test]
-fn parse_project_selection_extracts_index() {
-    assert_eq!(parse_project_selection("3: my-proj    /tmp/x"), Ok(3));
-}
-
-#[test]
-fn parse_project_selection_handles_name_with_spaces() {
-    assert_eq!(
-        parse_project_selection("0: Client A Project    /tmp/client a"),
-        Ok(0)
-    );
-}
-
-#[test]
-fn parse_project_selection_rejects_garbage() {
-    assert!(parse_project_selection("not-an-index").is_err());
-}
-
-#[test]
 fn renamed_project_config_persists() {
     let dir = tempfile::tempdir().unwrap();
     let config_path = dir.path().join(".quickdev.toml");
@@ -380,4 +362,378 @@ fn set_global_setting_rejects_bad_value_and_unknown_key() {
     assert!(set_global_setting(&mut config, "emulator", "nonexistent-terminal").is_err());
     assert!(set_global_setting(&mut config, "theme", "dark").is_err());
     assert!(config.emulator.is_none());
+}
+
+#[test]
+fn rewriting_a_project_config_keeps_comments_and_unmodelled_keys() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    fs::write(
+        &config_path,
+        r#"# my own notes about this project
+[project]
+name = "demo"
+
+[[terminals]]
+# the API server, do not remove
+name = "api"
+path = "./api"
+written_by_a_newer_quickdev = "keep me"
+"#,
+    )
+    .unwrap();
+
+    let mut config = load_project_config(&config_path).unwrap();
+    config.terminals.push(TerminalEntry {
+        name: "web".to_string(),
+        path: "./web".to_string(),
+        command: Some("npm run dev".to_string()),
+        emulator: None,
+    });
+    save_project_config(&config_path, &config).unwrap();
+
+    let content = fs::read_to_string(&config_path).unwrap();
+    assert!(content.starts_with("# my own notes about this project"));
+    assert!(content.contains("# the API server, do not remove"));
+    assert!(
+        content.contains("written_by_a_newer_quickdev = \"keep me\""),
+        "a key this build does not model must survive a rewrite: {content}"
+    );
+    // And the new terminal actually landed.
+    let reloaded = load_project_config(&config_path).unwrap();
+    assert_eq!(reloaded.terminals.len(), 2);
+    assert_eq!(reloaded.terminals[1].name, "web");
+    assert_eq!(
+        reloaded.terminals[1].command.as_deref(),
+        Some("npm run dev")
+    );
+}
+
+#[test]
+fn removing_an_optional_field_clears_it_from_the_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+
+    fs::write(
+        &config_path,
+        "[project]\nname = \"demo\"\n\n[[terminals]]\nname = \"api\"\npath = \".\"\ncommand = \"echo hi\"\n",
+    )
+    .unwrap();
+
+    let mut config = load_project_config(&config_path).unwrap();
+    config.terminals[0].command = None;
+    save_project_config(&config_path, &config).unwrap();
+
+    let content = fs::read_to_string(&config_path).unwrap();
+    assert!(
+        !content.contains("command"),
+        "stale key left behind: {content}"
+    );
+    assert!(load_project_config(&config_path).unwrap().terminals[0]
+        .command
+        .is_none());
+}
+
+#[test]
+fn adding_a_top_level_key_to_a_global_config_with_projects_stays_valid_toml() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+
+    // A global config whose only content is an array-of-tables. A naive rewrite
+    // would append `emulator = ...` after `[[projects]]`, silently making it a
+    // key of the last project instead of a top-level setting.
+    fs::write(
+        &path,
+        "terminal_app_tabbing_prompt_declined = false\n\n[[projects]]\nname = \"demo\"\npath = \"/tmp/demo\"\n",
+    )
+    .unwrap();
+
+    let mut global = load_global_config(&path).unwrap();
+    global.emulator = Some("kitty".to_string());
+    save_global_config(&path, &global).unwrap();
+
+    let reloaded = load_global_config(&path).unwrap();
+    assert_eq!(reloaded.emulator.as_deref(), Some("kitty"));
+    assert_eq!(reloaded.projects.len(), 1);
+    assert_eq!(reloaded.projects[0].name, "demo");
+}
+
+#[test]
+fn saving_over_an_unparseable_config_refuses_rather_than_destroying_it() {
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+    let broken = "[project\nname = \"demo\"\n";
+    fs::write(&config_path, broken).unwrap();
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "demo".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    assert!(save_project_config(&config_path, &config).is_err());
+    assert_eq!(fs::read_to_string(&config_path).unwrap(), broken);
+}
+
+#[cfg(unix)]
+#[test]
+fn saving_keeps_the_existing_file_permissions() {
+    use std::os::unix::fs::PermissionsExt;
+
+    let dir = tempfile::tempdir().unwrap();
+    let config_path = dir.path().join(".quickdev.toml");
+    fs::write(&config_path, "[project]\nname = \"demo\"\n").unwrap();
+    fs::set_permissions(&config_path, fs::Permissions::from_mode(0o644)).unwrap();
+
+    let config = load_project_config(&config_path).unwrap();
+    save_project_config(&config_path, &config).unwrap();
+
+    assert_eq!(
+        fs::metadata(&config_path).unwrap().permissions().mode() & 0o777,
+        0o644,
+        "an atomic replace must not silently re-chmod the user's config"
+    );
+}
+
+#[test]
+fn saving_refuses_when_the_file_changed_since_it_was_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".quickdev.toml");
+    fs::write(&path, "[project]\nname = \"demo\"\n").unwrap();
+
+    let config = load_project_config(&path).unwrap();
+
+    // Stands in for a second quickdev invocation writing between our load and
+    // our save. Without the check, the save below would silently discard it.
+    fs::write(
+        &path,
+        "[project]\nname = \"demo\"\n\n[[terminals]]\nname = \"added-elsewhere\"\npath = \".\"\n",
+    )
+    .unwrap();
+
+    let err = save_project_config(&path, &config).unwrap_err();
+    assert!(err.contains("changed on disk"), "got: {err}");
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("added-elsewhere"),
+        "the concurrent write must survive"
+    );
+}
+
+#[test]
+fn saving_refuses_to_overwrite_a_file_this_process_never_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".quickdev.toml");
+    let existing = "[project]\nname = \"someone-elses\"\n";
+    fs::write(&path, existing).unwrap();
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "mine".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    assert!(save_project_config(&path, &config).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), existing);
+}
+
+#[test]
+fn repeated_saves_in_one_process_are_allowed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".quickdev.toml");
+
+    let mut config = ProjectConfig {
+        project: ProjectEntry {
+            name: "demo".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    // Creating it, then editing it again, must not trip the change detection:
+    // a save records what it wrote.
+    save_project_config(&path, &config).unwrap();
+    config.terminals.push(TerminalEntry {
+        name: "api".to_string(),
+        path: ".".to_string(),
+        command: None,
+        emulator: None,
+    });
+    save_project_config(&path, &config).unwrap();
+
+    assert_eq!(load_project_config(&path).unwrap().terminals.len(), 1);
+}
+
+/// Writes a `.quickdev.toml` and returns its path.
+fn seeded_config(dir: &std::path::Path) -> std::path::PathBuf {
+    let path = dir.join(".quickdev.toml");
+    fs::write(&path, "[project]\nname = \"demo\"\n").unwrap();
+    path
+}
+
+/// The staging file `remove_config_with` created, if it is still there.
+fn staged_leftovers(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(".quickdev-deregister-"))
+        })
+        .collect()
+}
+
+#[test]
+fn remove_config_with_commits_and_leaves_nothing_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+
+    remove_config_with(&path, || Ok(())).unwrap();
+
+    assert!(!path.exists());
+    assert!(staged_leftovers(dir.path()).is_empty());
+}
+
+#[test]
+fn remove_config_with_does_not_clobber_an_earlier_recovery_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+
+    // A recovery copy left by an earlier failed cleanup. A fixed staging name
+    // would be renamed over, destroying it.
+    let earlier = dir.path().join(".quickdev-deregister-earlier");
+    fs::write(&earlier, "an earlier recovery copy").unwrap();
+
+    remove_config_with(&path, || Ok(())).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&earlier).unwrap(),
+        "an earlier recovery copy"
+    );
+}
+
+#[test]
+fn remove_config_with_restores_the_config_when_the_commit_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+
+    let err =
+        remove_config_with(&path, || Err::<(), _>("index write failed".to_string())).unwrap_err();
+
+    assert_eq!(err, "index write failed");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "[project]\nname = \"demo\"\n",
+        "the config must be exactly as it started"
+    );
+    assert!(staged_leftovers(dir.path()).is_empty());
+}
+
+#[test]
+fn remove_config_with_names_the_recovery_path_when_restoration_also_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+    let blocked = path.clone();
+
+    let err = remove_config_with(&path, move || {
+        // Fault injection: occupying the config's path with a directory makes
+        // the restoring rename fail, the one case where the caller is left with
+        // data only in the staging file.
+        fs::create_dir(&blocked).unwrap();
+        Err::<(), _>("index write failed".to_string())
+    })
+    .unwrap_err();
+
+    assert!(err.contains("index write failed"));
+    assert!(err.contains("could not be put back"), "got: {err}");
+    let leftovers = staged_leftovers(dir.path());
+    assert_eq!(leftovers.len(), 1, "the staged copy must survive");
+    assert!(
+        err.contains(leftovers[0].to_str().unwrap()),
+        "the error must name the recovery path; got: {err}"
+    );
+    assert_eq!(
+        fs::read_to_string(&leftovers[0]).unwrap(),
+        "[project]\nname = \"demo\"\n"
+    );
+}
+
+#[test]
+fn remove_config_with_reports_a_failed_staged_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+    let parent = dir.path().to_path_buf();
+
+    let err = remove_config_with(&path, move || {
+        // Fault injection: swap the staged file for a directory of the same
+        // name, so the final `remove_file` fails after the commit succeeded.
+        let staged = staged_leftovers(&parent).pop().unwrap();
+        fs::remove_file(&staged).unwrap();
+        fs::create_dir(&staged).unwrap();
+        Ok(())
+    })
+    .unwrap_err();
+
+    assert!(err.contains("could not be deleted"), "got: {err}");
+    assert!(!path.exists(), "the commit still happened");
+}
+
+#[test]
+fn a_concurrent_save_cannot_resurrect_a_config_being_deleted() {
+    use std::sync::{Arc, Barrier};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+    // A command that has already loaded the config and is about to write it back.
+    let pending = load_project_config(&path).unwrap();
+
+    let writer_path = path.clone();
+    // Both parties are the writer thread and the commit closure, so the save
+    // starts exactly when the delete is mid-sequence.
+    let gate = Arc::new(Barrier::new(2));
+    let writer_gate = Arc::clone(&gate);
+
+    const COMMIT_HELD: std::time::Duration = std::time::Duration::from_millis(300);
+
+    let writer = std::thread::spawn(move || {
+        writer_gate.wait();
+        let started = std::time::Instant::now();
+        let result = save_project_config(&writer_path, &pending);
+        (result, started.elapsed())
+    });
+
+    let deleted = remove_config_with(&path, || {
+        // Inside the commit: the config is staged aside and the lock is held.
+        // Release the writer here — unlocked, this is exactly where it would
+        // write a fresh .quickdev.toml that the delete would never clean up.
+        gate.wait();
+        std::thread::sleep(COMMIT_HELD);
+        Ok(())
+    });
+
+    let (save_result, save_took) = writer.join().unwrap();
+
+    assert!(deleted.is_ok(), "delete failed: {deleted:?}");
+    assert!(
+        !path.exists(),
+        "the delete reported success but a config is back on disk (save returned {save_result:?})"
+    );
+    assert!(staged_leftovers(dir.path()).is_empty());
+    // The invariant above also holds without any locking, because the save
+    // happens to observe the staged-aside gap and fails its change check. This
+    // is what actually pins the lock down: the save must have been *blocked*
+    // for the whole time the delete held it, not merely have failed. A slow
+    // machine only makes this wait longer, so the threshold is one-sided.
+    assert!(
+        save_took >= COMMIT_HELD / 2,
+        "the save was not blocked by the delete's lock (took {save_took:?})"
+    );
 }
