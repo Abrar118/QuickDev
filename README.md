@@ -471,6 +471,13 @@ When launching applications, QuickDev auto-detects known tools and uses their CL
 
 Editors automatically receive the project root as an argument. Unknown applications are launched generically (via `open -a` on macOS, direct execution elsewhere).
 
+Detection is used in two places, and they are deliberately not the same. Deciding
+whether to *pass the project root* considers both the name and the path (the
+table above). Deciding whether to *substitute the tool's CLI* (`code`, `cursor`,
+`zed`) at launch time considers **the path only** — a wrapper such as a Flatpak,
+Snap, or Squirrel `Update.exe` whose display name merely matches must run through
+its own saved arguments, not through the editor CLI.
+
 ## Path Resolution
 
 - **Terminal paths** are relative to the project root. `"."` means the project root, `"./src"` means the `src` subdirectory.

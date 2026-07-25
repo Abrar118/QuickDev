@@ -316,7 +316,7 @@ pub fn load_global_config(path: &Path) -> Result<GlobalConfig, String> {
 const GLOBAL_COMMENT_HEADER: &str = "\
 # QuickDev global configuration
 #
-# emulator = (optional) Default terminal emulator: \"ghostty\", \"terminal\", \"gnome-terminal\", \"ptyxis\"
+# emulator = (optional) Default terminal emulator: \"ghostty\", \"terminal\", \"gnome-terminal\", \"ptyxis\", \"kitty\"
 # terminal_app_tabbing_prompt_declined = internal flag; avoids re-prompting after decline
 #
 # Projects are auto-managed by quickdev init / deregister
@@ -368,7 +368,7 @@ const TOML_COMMENT_HEADER: &str = "\
 #   name    = Label for this terminal tab
 #   path    = Working directory relative to project root (e.g., \".\", \"./src\")
 #   command  = (optional) Startup command to run when the terminal opens
-#   emulator = (optional) Terminal emulator: \"ghostty\", \"terminal\", \"gnome-terminal\", \"ptyxis\". Omit for auto-detect
+#   emulator = (optional) Terminal emulator: \"ghostty\", \"terminal\", \"gnome-terminal\", \"ptyxis\", \"kitty\". Omit for auto-detect
 #
 # [[applications]]
 #   name = Application display name
