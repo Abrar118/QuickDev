@@ -316,8 +316,9 @@ Each project has a `.quickdev.toml` in its root directory.
 QuickDev edits this file in place, so your comments and any keys it does not
 recognize are preserved. Alongside it you will see an empty `.quickdev.toml.lock`
 — a lock file QuickDev holds only while writing, so two commands running at once
-cannot overwrite each other. It is machine-local; add it to your `.gitignore`
-next to `.quickdev.toml`.
+cannot overwrite each other. It is machine-local and is left in place even after
+`quickdev deregister --delete` (removing it could let two processes each think
+they hold the lock). Add it to your `.gitignore` next to `.quickdev.toml`.
 
 ```toml
 [project]

@@ -106,62 +106,77 @@ fn with_config_lock<T>(
 /// Remove `config_path` only if `commit` succeeds — either both happen, or
 /// neither does.
 ///
+/// The whole sequence runs under the same lock the save path takes. Deleting is
+/// a write to the config like any other: without the lock, a concurrent save
+/// could read the config, wait while this moves it aside, then write a fresh one
+/// — leaving an unregistered `.quickdev.toml` behind after this reported it
+/// deleted.
+///
 /// The config is moved to a uniquely-named staging file beside it first.
 /// Uniquely, because `rename` replaces its destination on Unix: a fixed staging
 /// name would destroy a recovery copy left behind by an earlier failed cleanup.
 /// If `commit` fails the config is moved back, and if that restore also fails
 /// the error names the staging file so it can be recovered by hand.
+///
+/// The lock file itself is deliberately left in place. Unlinking it would let a
+/// later invocation create a fresh one while another process still holds the
+/// old, now-unnamed inode — two processes each holding "the" lock.
 pub fn remove_config_with<T>(
     config_path: &Path,
     commit: impl FnOnce() -> Result<T, String>,
 ) -> Result<T, String> {
-    let parent = config_path
-        .parent()
-        .filter(|p| !p.as_os_str().is_empty())
-        .unwrap_or_else(|| Path::new("."));
-    let staged = tempfile::Builder::new()
-        .prefix(".quickdev-deregister-")
-        .tempfile_in(parent)
-        .map_err(|e| format!("failed to stage {}: {e}", config_path.display()))?;
-    // Take the exclusively-created path; the rename replaces the placeholder.
-    // The handle is dropped first so Windows can rename over it.
-    let (file, staged) = staged
-        .keep()
-        .map_err(|e| format!("failed to stage {}: {e}", config_path.display()))?;
-    drop(file);
+    with_config_lock(config_path, || {
+        let parent = config_path
+            .parent()
+            .filter(|p| !p.as_os_str().is_empty())
+            .unwrap_or_else(|| Path::new("."));
+        let staged = tempfile::Builder::new()
+            .prefix(".quickdev-deregister-")
+            .tempfile_in(parent)
+            .map_err(|e| format!("failed to stage {}: {e}", config_path.display()))?;
+        // Take the exclusively-created path; the rename replaces the placeholder.
+        // The handle is dropped first so Windows can rename over it.
+        let (file, staged) = staged
+            .keep()
+            .map_err(|e| format!("failed to stage {}: {e}", config_path.display()))?;
+        drop(file);
 
-    if let Err(e) = fs::rename(config_path, &staged) {
-        let _ = fs::remove_file(&staged);
-        return Err(format!(
-            "failed to move {} aside: {e}",
-            config_path.display()
-        ));
-    }
+        if let Err(e) = fs::rename(config_path, &staged) {
+            let _ = fs::remove_file(&staged);
+            return Err(format!(
+                "failed to move {} aside: {e}",
+                config_path.display()
+            ));
+        }
 
-    let committed = match commit() {
-        Ok(value) => value,
-        Err(e) => {
-            return Err(match fs::rename(&staged, config_path) {
-                Ok(()) => e,
-                Err(restore) => format!(
+        let committed = match commit() {
+            Ok(value) => value,
+            Err(e) => {
+                return Err(match fs::rename(&staged, config_path) {
+                    Ok(()) => e,
+                    Err(restore) => format!(
                     "{e}\nadditionally, {} could not be put back ({restore}) — recover it from {}",
                     config_path.display(),
                     staged.display()
                 ),
-            })
-        }
-    };
+                })
+            }
+        };
 
-    fs::remove_file(&staged).map_err(|e| {
-        format!(
-            "removed {} from the index, but its staged copy at {} could not be deleted: {e}",
-            config_path.display(),
-            staged.display()
-        )
-    })?;
-    // The config is gone, so its lock file has nothing left to guard.
-    let _ = fs::remove_file(lock_path_for(config_path));
-    Ok(committed)
+        fs::remove_file(&staged).map_err(|e| {
+            format!(
+                "removed {} from the index, but its staged copy at {} could not be deleted: {e}",
+                config_path.display(),
+                staged.display()
+            )
+        })?;
+        // Deliberately *not* `remember(config_path, None)`. Recording the
+        // deletion would tell the rest of the process the file is legitimately
+        // absent, so a save still holding the pre-delete config would look like
+        // a create and recreate it. Leaving the pre-delete record in place makes
+        // that save fail its change check instead, which is what should happen.
+        Ok(committed)
+    })
 }
 
 /// Refuse to write when the file is not what this process last read.

@@ -685,3 +685,55 @@ fn remove_config_with_reports_a_failed_staged_cleanup() {
     assert!(err.contains("could not be deleted"), "got: {err}");
     assert!(!path.exists(), "the commit still happened");
 }
+
+#[test]
+fn a_concurrent_save_cannot_resurrect_a_config_being_deleted() {
+    use std::sync::{Arc, Barrier};
+
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+    // A command that has already loaded the config and is about to write it back.
+    let pending = load_project_config(&path).unwrap();
+
+    let writer_path = path.clone();
+    // Both parties are the writer thread and the commit closure, so the save
+    // starts exactly when the delete is mid-sequence.
+    let gate = Arc::new(Barrier::new(2));
+    let writer_gate = Arc::clone(&gate);
+
+    const COMMIT_HELD: std::time::Duration = std::time::Duration::from_millis(300);
+
+    let writer = std::thread::spawn(move || {
+        writer_gate.wait();
+        let started = std::time::Instant::now();
+        let result = save_project_config(&writer_path, &pending);
+        (result, started.elapsed())
+    });
+
+    let deleted = remove_config_with(&path, || {
+        // Inside the commit: the config is staged aside and the lock is held.
+        // Release the writer here — unlocked, this is exactly where it would
+        // write a fresh .quickdev.toml that the delete would never clean up.
+        gate.wait();
+        std::thread::sleep(COMMIT_HELD);
+        Ok(())
+    });
+
+    let (save_result, save_took) = writer.join().unwrap();
+
+    assert!(deleted.is_ok(), "delete failed: {deleted:?}");
+    assert!(
+        !path.exists(),
+        "the delete reported success but a config is back on disk (save returned {save_result:?})"
+    );
+    assert!(staged_leftovers(dir.path()).is_empty());
+    // The invariant above also holds without any locking, because the save
+    // happens to observe the staged-aside gap and fails its change check. This
+    // is what actually pins the lock down: the save must have been *blocked*
+    // for the whole time the delete held it, not merely have failed. A slow
+    // machine only makes this wait longer, so the threshold is one-sided.
+    assert!(
+        save_took >= COMMIT_HELD / 2,
+        "the save was not blocked by the delete's lock (took {save_took:?})"
+    );
+}
