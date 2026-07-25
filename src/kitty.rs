@@ -70,7 +70,7 @@ pub fn build_session(tabs: &[SessionTab<'_>]) -> String {
 
 /// Write per-tab wrapper scripts and the session file into `dir`. Returns the
 /// session file path. Exposed for testing.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn write_session(
     dir: &std::path::Path,
     tabs: &[KittyTab<'_>],
@@ -112,9 +112,9 @@ pub fn write_session(
 /// stdout/stderr are nulled to avoid macOS `SEL:` spam and tty coupling. `Err`
 /// is returned only when the binary cannot be spawned, so the caller falls back
 /// to per-window launches when kitty is missing.
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "macos", target_os = "linux"))]
 pub fn launch_kitty_session(tabs: &[KittyTab<'_>]) -> Result<(), String> {
-    use crate::adapters::resolve_command;
+    use crate::adapters::resolve_kitty;
     use std::process::{Command, Stdio};
 
     if tabs.is_empty() {
@@ -124,7 +124,7 @@ pub fn launch_kitty_session(tabs: &[KittyTab<'_>]) -> Result<(), String> {
     std::fs::create_dir_all(&dir).map_err(|e| format!("failed to create temp dir: {e}"))?;
     let session = write_session(&dir, tabs)?;
 
-    let resolved = resolve_command("kitty").ok_or("kitty not found".to_string())?;
+    let resolved = resolve_kitty().ok_or("kitty not found".to_string())?;
     Command::new(resolved)
         .arg(format!("--session={}", session.display()))
         .stdout(Stdio::null())

@@ -29,6 +29,12 @@ pub fn select_tab_strategy(
 ) -> TabStrategy {
     match os {
         "macos" => match emulator {
+            // kitty groups tabs through a `--session` file exactly as on Linux,
+            // and is preferred by auto-detect when installed. Checked before the
+            // Ghostty arms so an explicit pin and auto-detect agree.
+            Some("kitty") if caps.kitty_available => TabStrategy::KittySession,
+            Some("kitty") => TabStrategy::WindowOnly,
+            None if caps.kitty_available => TabStrategy::KittySession,
             Some("ghostty") | None if macos_ghostty_applescript_supported(caps) => {
                 TabStrategy::AppleScriptTab
             }

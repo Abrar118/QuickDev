@@ -349,7 +349,7 @@ path = "/Applications/Docker.app"
 | `name` | yes | Label for this terminal tab |
 | `path` | yes | Working directory, relative to project root (e.g., `.`, `./src`) |
 | `command` | no | Startup command to run when the terminal opens |
-| `emulator` | no | Terminal emulator override: `"ghostty"`, `"terminal"`, `"gnome-terminal"`, `"ptyxis"`. Omit for auto-detect |
+| `emulator` | no | Terminal emulator override: `"ghostty"`, `"terminal"`, `"gnome-terminal"`, `"ptyxis"`, `"kitty"`. Omit for auto-detect |
 
 #### Application fields
 
@@ -407,14 +407,16 @@ When launching a terminal, QuickDev checks:
 2. **Global** `emulator` in `~/Documents/quickdev/config.toml`
 3. **Auto-detect** (lowest priority)
 
-Auto-detect tries Ghostty first, then falls back to the platform default.
+Auto-detect prefers kitty on both macOS and Linux (it groups tabs in one
+window), then Ghostty, then the platform default — Terminal.app on macOS, and
+Ptyxis before gnome-terminal on Linux.
 
 ### Managing the default emulator
 
 Set the global default terminal emulator without hand-editing the global config:
 
 ```bash
-quickdev config set emulator ghostty   # ghostty | terminal | gnome-terminal | ptyxis
+quickdev config set emulator ghostty   # ghostty | terminal | gnome-terminal | ptyxis | kitty
 quickdev config get emulator
 quickdev config unset emulator
 ```
@@ -423,6 +425,7 @@ quickdev config unset emulator
 
 | Emulator | macOS | Linux | Windows | Tabs |
 |----------|-------|-------|---------|------|
+| kitty | yes | yes | no | yes (via `--session`) |
 | Ghostty | yes | yes | no | macOS: yes (≥ 1.3); Linux: no |
 | Terminal.app | yes | - | - | yes |
 | Ptyxis | - | yes | - | no (separate windows) |
@@ -435,13 +438,19 @@ quickdev config unset emulator
 
 **Tab behavior:** When multiple terminals are configured, emulators that support tabbing open subsequent terminals as tabs in one window; otherwise each opens its own window. When tabbing isn't available QuickDev always falls back to separate windows rather than failing.
 
+**macOS & Linux — kitty:** Opens all terminals as tabs in one window via a
+generated `kitty --session` file, each tab in its own directory running its own
+command. The mechanism is identical on both platforms. kitty is what auto-detect
+picks first when it's installed; pin `emulator = "kitty"` to force it, or pin
+another emulator to opt out.
+
 **macOS — Ghostty:** With Ghostty 1.3+ (and `macos-applescript` enabled, the default), QuickDev drives Ghostty's AppleScript API to open all terminals as tabs in a single window, each in its own directory. macOS prompts once for the **Automation** permission; if it's denied or Ghostty is older, QuickDev falls back to separate windows.
 
 **macOS — Terminal.app:** Opens tabs automatically when `AppleWindowTabbingMode = always` (QuickDev offers to set this on first use); otherwise it uses ⌘T via System Events, which needs the **Accessibility** permission. Falls back to separate windows if denied.
 
-**Linux — gnome-terminal:** Opens all terminals as tabs in one window via `gnome-terminal --load-config`, each tab in its own directory running its own command. This is used when you set `emulator = "gnome-terminal"`, or when gnome-terminal is the only supported terminal installed.
+**Linux — gnome-terminal:** Opens all terminals as tabs in one window via `gnome-terminal --load-config`, each tab in its own directory running its own command. This is used when you set `emulator = "gnome-terminal"`, or when gnome-terminal is the only supported terminal installed (kitty and Ptyxis are both auto-detected ahead of it).
 
-**Linux — Ptyxis & Ghostty:** Open one window per terminal (each with the correct directory and command). Neither CLI can open tabs that carry their own directory and command: Ptyxis treats `-d`/`-x` as last-wins and its cross-process `--tab` opens a new window; Ghostty (Linux/GTK) has no CLI tab action at all. **Ptyxis** is the preferred Linux terminal and is auto-detected ahead of gnome-terminal — so on a machine with Ptyxis installed, set `emulator = "gnome-terminal"` explicitly to get a single tabbed window. For Ptyxis or Ghostty, a terminal multiplexer (e.g. tmux or zellij) is the only route to single-window tabs and is not built in.
+**Linux — Ptyxis & Ghostty:** Open one window per terminal (each with the correct directory and command). Neither CLI can open tabs that carry their own directory and command: Ptyxis treats `-d`/`-x` as last-wins and its cross-process `--tab` opens a new window; Ghostty (Linux/GTK) has no CLI tab action at all. Of the two, **Ptyxis** is auto-detected ahead of gnome-terminal (but behind kitty) — so on a machine with Ptyxis and no kitty, set `emulator = "gnome-terminal"` explicitly to get a single tabbed window. For Ptyxis or Ghostty, a terminal multiplexer (e.g. tmux or zellij) is the only route to single-window tabs and is not built in.
 
 ## Tool Detection
 
