@@ -51,3 +51,13 @@ fn indexed_selection_rejects_rows_it_cannot_map() {
     // Non-numeric index.
     assert!(parse_indexed_selection(&["x\t[terminal] a".to_string()], 3).is_err());
 }
+
+#[test]
+fn sanitize_row_removes_characters_that_would_forge_picker_rows() {
+    use quickdev::fzf::sanitize_row;
+
+    // A newline would become an extra row; a tab would shift the index column.
+    assert_eq!(sanitize_row("api\nlaunch evil"), "apilaunch evil");
+    assert_eq!(sanitize_row("a\tb"), "ab");
+    assert_eq!(sanitize_row("normal — name"), "normal — name");
+}

@@ -86,24 +86,19 @@ pub fn validate_project_config(config: &ProjectConfig, project_root: &Path) -> V
         errors.push("project.name is empty".to_string());
     }
 
+    // Same rules `add` enforces, so a hand-edited config cannot hold an entry
+    // the CLI would have refused to create. `validate` is where those configs
+    // are caught, since nothing stops a user from writing the file directly.
     for term in &config.terminals {
-        if let Err(e) = resolve_terminal_path(project_root, &term.path) {
-            errors.push(format!(
-                "terminal '{}': invalid path '{}': {}",
-                term.name, term.path, e
-            ));
-        }
-        if let Some(emu) = &term.emulator {
-            if !is_supported_emulator(emu) {
-                errors.push(format!(
-                    "terminal '{}': unsupported emulator '{}'",
-                    term.name, emu
-                ));
-            }
+        if let Err(e) = validate_terminal_entry(term, project_root) {
+            errors.push(format!("terminal '{}': {e}", term.name));
         }
     }
 
     for app in &config.applications {
+        if let Err(e) = validate_app_entry(app) {
+            errors.push(format!("application '{}': {e}", app.name));
+        }
         if !app_target_resolvable(&app.path) {
             warnings.push(format!(
                 "application '{}': path does not exist and is not on PATH: {}",

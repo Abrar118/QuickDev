@@ -77,8 +77,24 @@ pub fn fzf_select_one(items: &[String], header: &str) -> Result<String, String> 
     Ok(selected.remove(0))
 }
 
-pub fn fzf_select_multi(items: &[String], header: &str) -> Result<Vec<String>, String> {
-    run_fzf(items, header, &["--multi"])
+/// Strip characters that would break the one-item-per-line picker protocol.
+///
+/// fzf reads one row per line and splits the hidden index on a tab, so a newline
+/// or tab inside user data would forge or corrupt rows. Every picker that
+/// displays config-derived text runs it through here.
+pub fn sanitize_row(value: &str) -> String {
+    value.chars().filter(|c| !c.is_control()).collect()
+}
+
+/// Args that hide the leading index column from the user.
+const INDEXED_ARGS: [&str; 4] = ["--delimiter", "\t", "--with-nth", "2.."];
+
+fn indexed_rows(items: &[String]) -> Vec<String> {
+    items
+        .iter()
+        .enumerate()
+        .map(|(i, item)| format!("{i}\t{}", sanitize_row(item)))
+        .collect()
 }
 
 /// Present `items` and return the *positions* of the rows the user picked.
@@ -88,19 +104,25 @@ pub fn fzf_select_multi(items: &[String], header: &str) -> Result<Vec<String>, S
 /// its display text is unreliable — an item's name may legally contain whatever
 /// separator the display uses, in which case the item can never be selected.
 pub fn fzf_select_multi_indexed(items: &[String], header: &str) -> Result<Vec<usize>, String> {
-    let rows: Vec<String> = items
-        .iter()
-        .enumerate()
-        .map(|(i, item)| format!("{i}\t{item}"))
-        .collect();
+    let rows = indexed_rows(items);
+    let mut args = vec!["--multi"];
+    args.extend_from_slice(&INDEXED_ARGS);
 
-    let selected = run_fzf(
-        &rows,
-        header,
-        &["--multi", "--delimiter", "\t", "--with-nth", "2.."],
-    )?;
+    let selected = run_fzf(&rows, header, &args)?;
 
     parse_indexed_selection(&selected, items.len())
+}
+
+/// Single-selection counterpart of [`fzf_select_multi_indexed`].
+pub fn fzf_select_one_indexed(items: &[String], header: &str) -> Result<usize, String> {
+    let rows = indexed_rows(items);
+
+    let selected = run_fzf(&rows, header, &INDEXED_ARGS)?;
+
+    parse_indexed_selection(&selected, items.len())?
+        .into_iter()
+        .next()
+        .ok_or_else(|| CANCELLED.to_string())
 }
 
 /// Recover row positions from the hidden index column of fzf's output.

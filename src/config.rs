@@ -36,19 +36,65 @@ fn atomic_write(path: &Path, content: &str) -> Result<(), String> {
     Ok(())
 }
 
-/// Parse `path` for in-place editing, or `None` when it does not exist yet.
-///
-/// A file that exists but does not parse is an error rather than a silent
-/// regeneration: overwriting it would destroy whatever the user was editing.
-fn existing_document(path: &Path) -> Result<Option<DocumentMut>, String> {
+/// Contents of `path`, or `None` when it does not exist.
+fn read_optional(path: &Path) -> Result<Option<String>, String> {
     match fs::read_to_string(path) {
-        Ok(content) => content
-            .parse::<DocumentMut>()
-            .map(Some)
-            .map_err(|e| format!("failed to parse {}: {e}", path.display())),
+        Ok(content) => Ok(Some(content)),
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(None),
         Err(e) => Err(format!("failed to read {}: {e}", path.display())),
     }
+}
+
+/// What this process last saw in each config file — `None` meaning "absent".
+///
+/// Every mutating command is read–modify–write: load a config, change it in
+/// memory, write the whole thing back. Nothing coordinates two concurrent
+/// invocations, so without a check the second writer silently discards the
+/// first's change (`quickdev add terminal a` and `add terminal b` racing would
+/// keep only one). Remembering what we read lets the write refuse when the file
+/// no longer matches.
+static SEEN: std::sync::Mutex<std::collections::BTreeMap<PathBuf, Option<String>>> =
+    std::sync::Mutex::new(std::collections::BTreeMap::new());
+
+fn remember(path: &Path, content: Option<&str>) {
+    let mut seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    seen.insert(path.to_path_buf(), content.map(str::to_string));
+}
+
+/// Refuse to write when the file is not what this process last read.
+///
+/// This narrows the lost-update window to the microseconds between this check
+/// and the rename in [`atomic_write`]; it does not eliminate it. Closing it
+/// fully needs an advisory lock held across the whole read–modify–write, which
+/// would mean blocking one invocation on another's interactive fzf picker. For a
+/// short-lived single-user CLI, turning a silent overwrite into a "re-run this"
+/// error is the better trade.
+fn ensure_unchanged(path: &Path, current: Option<&str>) -> Result<(), String> {
+    let seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
+    match seen.get(path) {
+        Some(recorded) if recorded.as_deref() == current => Ok(()),
+        Some(_) => Err(format!(
+            "{} changed on disk since it was read (another quickdev command may have run at the same time); re-run this command",
+            path.display()
+        )),
+        // Never read in this process: writing is only safe if we are creating
+        // the file. Otherwise we would be clobbering contents we never saw.
+        None if current.is_none() => Ok(()),
+        None => Err(format!(
+            "refusing to overwrite {} without reading it first",
+            path.display()
+        )),
+    }
+}
+
+/// Parse `content` for in-place editing.
+///
+/// A file that exists but does not parse is an error rather than a silent
+/// regeneration: overwriting it would destroy whatever the user was editing.
+fn parse_document(path: &Path, content: &str) -> Result<DocumentMut, String> {
+    content
+        .parse::<DocumentMut>()
+        .map_err(|e| format!("failed to parse {}: {e}", path.display()))
 }
 
 /// Set `key` to `val`, or remove it when `val` is `None`.
@@ -139,15 +185,15 @@ pub fn global_config_path() -> Result<PathBuf, String> {
 }
 
 pub fn load_global_config(path: &Path) -> Result<GlobalConfig, String> {
-    if !path.exists() {
+    let content = read_optional(path)?;
+    remember(path, content.as_deref());
+    let Some(content) = content else {
         return Ok(GlobalConfig {
             emulator: None,
             terminal_app_tabbing_prompt_declined: false,
             projects: vec![],
         });
-    }
-    let content =
-        fs::read_to_string(path).map_err(|e| format!("failed to read global config: {e}"))?;
+    };
     toml::from_str(&content).map_err(|e| format!("failed to parse global config: {e}"))
 }
 
@@ -165,10 +211,13 @@ pub fn save_global_config(path: &Path, config: &GlobalConfig) -> Result<(), Stri
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create config directory: {e}"))?;
     }
-    let content = match existing_document(path)? {
+    let current = read_optional(path)?;
+    ensure_unchanged(path, current.as_deref())?;
+    let content = match current {
         // Edit the file the user has: their comments, formatting, and any keys a
         // newer QuickDev writes but this build does not model survive the write.
-        Some(mut doc) => {
+        Some(existing) => {
+            let mut doc = parse_document(path, &existing)?;
             apply_global_config(&mut doc, config);
             doc.to_string()
         }
@@ -178,12 +227,15 @@ pub fn save_global_config(path: &Path, config: &GlobalConfig) -> Result<(), Stri
             format!("{GLOBAL_COMMENT_HEADER}\n{serialized}")
         }
     };
-    atomic_write(path, &content)
+    atomic_write(path, &content)?;
+    remember(path, Some(&content));
+    Ok(())
 }
 
 pub fn load_project_config(path: &Path) -> Result<ProjectConfig, String> {
     let content =
         fs::read_to_string(path).map_err(|e| format!("failed to read project config: {e}"))?;
+    remember(path, Some(&content));
     toml::from_str(&content).map_err(|e| format!("failed to parse project config: {e}"))
 }
 
@@ -208,8 +260,11 @@ const TOML_COMMENT_HEADER: &str = "\
 ";
 
 pub fn save_project_config(path: &Path, config: &ProjectConfig) -> Result<(), String> {
-    let content = match existing_document(path)? {
-        Some(mut doc) => {
+    let current = read_optional(path)?;
+    ensure_unchanged(path, current.as_deref())?;
+    let content = match current {
+        Some(existing) => {
+            let mut doc = parse_document(path, &existing)?;
             apply_project_config(&mut doc, config);
             doc.to_string()
         }
@@ -219,7 +274,9 @@ pub fn save_project_config(path: &Path, config: &ProjectConfig) -> Result<(), St
             format!("{TOML_COMMENT_HEADER}\n{serialized}")
         }
     };
-    atomic_write(path, &content)
+    atomic_write(path, &content)?;
+    remember(path, Some(&content));
+    Ok(())
 }
 
 pub fn find_project_config(start: &Path) -> Result<(PathBuf, PathBuf), String> {
@@ -273,13 +330,6 @@ pub fn resolve_project_config(start: &Path) -> Result<(PathBuf, PathBuf), String
         Ok(result) => Ok(result),
         Err(_) => fzf_select_project(),
     }
-}
-
-pub fn parse_project_selection(selected: &str) -> Result<usize, String> {
-    selected
-        .split_once(':')
-        .and_then(|(index, _)| index.trim().parse::<usize>().ok())
-        .ok_or_else(|| "invalid selection".to_string())
 }
 
 pub const SUPPORTED_EMULATORS: &[&str] =
@@ -455,13 +505,12 @@ fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     let items: Vec<String> = global
         .projects
         .iter()
-        .enumerate()
-        .map(|(i, p)| format!("{i}: {}    {}", p.name, p.path))
+        .map(|p| format!("{}    {}", p.name, p.path))
         .collect();
 
-    let selected = fzf::fzf_select_one(&items, "Select a project:")?;
-
-    let index = parse_project_selection(&selected)?;
+    // Indexed picker: the row's position identifies the project, so a name or
+    // path containing the visible separator cannot break the round-trip.
+    let index = fzf::fzf_select_one_indexed(&items, "Select a project:")?;
     let entry = global.projects.get(index).ok_or("invalid selection")?;
 
     let root = PathBuf::from(&entry.path);

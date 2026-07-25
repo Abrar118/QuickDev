@@ -1,3 +1,4 @@
+use crate::fzf::sanitize_row;
 use crate::models::ProjectConfig;
 
 pub(crate) fn prompt(message: &str) -> Result<String, String> {
@@ -7,12 +8,6 @@ pub(crate) fn prompt(message: &str) -> Result<String, String> {
         .read_line(&mut input)
         .map_err(|e| format!("failed to read input: {e}"))?;
     Ok(input.trim().to_string())
-}
-
-/// Strip characters that would break the one-item-per-line picker protocol.
-/// Names in existing configs predate validation, so display is defensive.
-fn one_line(value: &str) -> String {
-    value.chars().filter(|c| !c.is_control()).collect()
 }
 
 /// Picker rows for every terminal then every application, in config order.
@@ -25,20 +20,20 @@ pub(crate) fn build_item_display_list(config: &ProjectConfig) -> Vec<String> {
         let cmd_part = t
             .command
             .as_ref()
-            .map(|c| format!(" ({})", one_line(c)))
+            .map(|c| format!(" ({})", sanitize_row(c)))
             .unwrap_or_default();
         items.push(format!(
             "[terminal] {} — {}{}",
-            one_line(&t.name),
-            one_line(&t.path),
+            sanitize_row(&t.name),
+            sanitize_row(&t.path),
             cmd_part
         ));
     }
     for a in &config.applications {
         items.push(format!(
             "[app] {} — {}",
-            one_line(&a.name),
-            one_line(&a.path)
+            sanitize_row(&a.name),
+            sanitize_row(&a.path)
         ));
     }
     items

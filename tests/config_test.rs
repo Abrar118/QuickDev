@@ -1,7 +1,6 @@
 use quickdev::config::{
-    find_project_config, load_global_config, load_project_config, parse_project_selection,
-    register_existing_project_config, resolve_project_config, save_global_config,
-    save_project_config, unique_project_name,
+    find_project_config, load_global_config, load_project_config, register_existing_project_config,
+    resolve_project_config, save_global_config, save_project_config, unique_project_name,
 };
 use quickdev::models::{
     GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
@@ -200,24 +199,6 @@ fn resolve_project_config_finds_local() {
     let (config_path, project_root) = result.unwrap();
     assert_eq!(config_path, root.join(".quickdev.toml"));
     assert_eq!(project_root, root.to_path_buf());
-}
-
-#[test]
-fn parse_project_selection_extracts_index() {
-    assert_eq!(parse_project_selection("3: my-proj    /tmp/x"), Ok(3));
-}
-
-#[test]
-fn parse_project_selection_handles_name_with_spaces() {
-    assert_eq!(
-        parse_project_selection("0: Client A Project    /tmp/client a"),
-        Ok(0)
-    );
-}
-
-#[test]
-fn parse_project_selection_rejects_garbage() {
-    assert!(parse_project_selection("not-an-index").is_err());
 }
 
 #[test]
@@ -514,4 +495,76 @@ fn saving_keeps_the_existing_file_permissions() {
         0o644,
         "an atomic replace must not silently re-chmod the user's config"
     );
+}
+
+#[test]
+fn saving_refuses_when_the_file_changed_since_it_was_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".quickdev.toml");
+    fs::write(&path, "[project]\nname = \"demo\"\n").unwrap();
+
+    let config = load_project_config(&path).unwrap();
+
+    // Stands in for a second quickdev invocation writing between our load and
+    // our save. Without the check, the save below would silently discard it.
+    fs::write(
+        &path,
+        "[project]\nname = \"demo\"\n\n[[terminals]]\nname = \"added-elsewhere\"\npath = \".\"\n",
+    )
+    .unwrap();
+
+    let err = save_project_config(&path, &config).unwrap_err();
+    assert!(err.contains("changed on disk"), "got: {err}");
+    assert!(
+        fs::read_to_string(&path)
+            .unwrap()
+            .contains("added-elsewhere"),
+        "the concurrent write must survive"
+    );
+}
+
+#[test]
+fn saving_refuses_to_overwrite_a_file_this_process_never_read() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".quickdev.toml");
+    let existing = "[project]\nname = \"someone-elses\"\n";
+    fs::write(&path, existing).unwrap();
+
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "mine".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    assert!(save_project_config(&path, &config).is_err());
+    assert_eq!(fs::read_to_string(&path).unwrap(), existing);
+}
+
+#[test]
+fn repeated_saves_in_one_process_are_allowed() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join(".quickdev.toml");
+
+    let mut config = ProjectConfig {
+        project: ProjectEntry {
+            name: "demo".to_string(),
+        },
+        terminals: vec![],
+        applications: vec![],
+    };
+
+    // Creating it, then editing it again, must not trip the change detection:
+    // a save records what it wrote.
+    save_project_config(&path, &config).unwrap();
+    config.terminals.push(TerminalEntry {
+        name: "api".to_string(),
+        path: ".".to_string(),
+        command: None,
+        emulator: None,
+    });
+    save_project_config(&path, &config).unwrap();
+
+    assert_eq!(load_project_config(&path).unwrap().terminals.len(), 1);
 }

@@ -177,3 +177,47 @@ fn validate_app_entry_requires_a_usable_name_and_path() {
     })
     .is_err());
 }
+
+#[test]
+fn validate_rejects_hand_authored_entries_that_add_would_refuse() {
+    use quickdev::models::{AppEntry, ProjectConfig, ProjectEntry, TerminalEntry};
+    use quickdev::validate::validate_project_config;
+
+    // A config written by hand rather than through `quickdev add`, so it never
+    // passed entry validation.
+    let config = ProjectConfig {
+        project: ProjectEntry {
+            name: "p".to_string(),
+        },
+        terminals: vec![
+            TerminalEntry {
+                name: "  ".to_string(),
+                path: ".".to_string(),
+                command: None,
+                emulator: None,
+            },
+            TerminalEntry {
+                name: "api\nweb".to_string(),
+                path: ".".to_string(),
+                command: None,
+                emulator: None,
+            },
+        ],
+        applications: vec![AppEntry {
+            name: String::new(),
+            path: "/bin/sh".to_string(),
+            args: None,
+        }],
+    };
+
+    let report = validate_project_config(&config, std::path::Path::new("/tmp/project"));
+    assert!(
+        !report.is_ok(),
+        "empty and control-character names are errors"
+    );
+    assert!(report.errors.iter().any(|e| e.contains("cannot be empty")));
+    assert!(report
+        .errors
+        .iter()
+        .any(|e| e.contains("control characters")));
+}
