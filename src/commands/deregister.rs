@@ -1,5 +1,6 @@
 use crate::config::{
-    global_config_path, load_global_config, resolve_project_config, save_global_config,
+    global_config_path, load_global_config, remove_config_with, resolve_project_config,
+    save_global_config,
 };
 
 pub(crate) fn cmd_deregister(delete: bool) -> Result<(), String> {
@@ -23,25 +24,12 @@ pub(crate) fn cmd_deregister(delete: bool) -> Result<(), String> {
     }
 
     if delete {
-        // Neither order is safe on its own: deleting first can destroy a config
-        // the user cannot get back if the index write then fails, and saving
-        // first can leave the config orphaned on disk. So move it aside, save,
-        // and put it back on failure — the project ends up either fully
-        // deregistered or exactly as it started.
-        let staged = config_path.with_extension("toml.deregister");
-        std::fs::rename(&config_path, &staged)
-            .map_err(|e| format!("failed to move {} aside: {e}", config_path.display()))?;
-        if let Err(e) = save_global_config(&global_path, &global) {
-            let _ = std::fs::rename(&staged, &config_path);
-            return Err(e);
-        }
-        std::fs::remove_file(&staged).map_err(|e| {
-            format!(
-                "deregistered '{}', but could not delete {}: {e}",
-                removed_name.clone().unwrap_or_default(),
-                staged.display()
-            )
-        })?;
+        // Neither order is safe alone: deleting first can destroy a config the
+        // user cannot get back if the index write then fails, and saving first
+        // can leave the config orphaned on disk. remove_config_with stages the
+        // config aside and restores it if the index write fails, so the project
+        // ends up either fully deregistered or exactly as it started.
+        remove_config_with(&config_path, || save_global_config(&global_path, &global))?;
         println!(
             "Deregistered and deleted config for '{}'",
             removed_name.unwrap_or_default()

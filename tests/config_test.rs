@@ -1,6 +1,7 @@
 use quickdev::config::{
     find_project_config, load_global_config, load_project_config, register_existing_project_config,
-    resolve_project_config, save_global_config, save_project_config, unique_project_name,
+    remove_config_with, resolve_project_config, save_global_config, save_project_config,
+    unique_project_name,
 };
 use quickdev::models::{
     GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
@@ -567,4 +568,120 @@ fn repeated_saves_in_one_process_are_allowed() {
     save_project_config(&path, &config).unwrap();
 
     assert_eq!(load_project_config(&path).unwrap().terminals.len(), 1);
+}
+
+/// Writes a `.quickdev.toml` and returns its path.
+fn seeded_config(dir: &std::path::Path) -> std::path::PathBuf {
+    let path = dir.join(".quickdev.toml");
+    fs::write(&path, "[project]\nname = \"demo\"\n").unwrap();
+    path
+}
+
+/// The staging file `remove_config_with` created, if it is still there.
+fn staged_leftovers(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+    fs::read_dir(dir)
+        .unwrap()
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.file_name()
+                .and_then(|n| n.to_str())
+                .is_some_and(|n| n.starts_with(".quickdev-deregister-"))
+        })
+        .collect()
+}
+
+#[test]
+fn remove_config_with_commits_and_leaves_nothing_behind() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+
+    remove_config_with(&path, || Ok(())).unwrap();
+
+    assert!(!path.exists());
+    assert!(staged_leftovers(dir.path()).is_empty());
+}
+
+#[test]
+fn remove_config_with_does_not_clobber_an_earlier_recovery_copy() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+
+    // A recovery copy left by an earlier failed cleanup. A fixed staging name
+    // would be renamed over, destroying it.
+    let earlier = dir.path().join(".quickdev-deregister-earlier");
+    fs::write(&earlier, "an earlier recovery copy").unwrap();
+
+    remove_config_with(&path, || Ok(())).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&earlier).unwrap(),
+        "an earlier recovery copy"
+    );
+}
+
+#[test]
+fn remove_config_with_restores_the_config_when_the_commit_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+
+    let err =
+        remove_config_with(&path, || Err::<(), _>("index write failed".to_string())).unwrap_err();
+
+    assert_eq!(err, "index write failed");
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        "[project]\nname = \"demo\"\n",
+        "the config must be exactly as it started"
+    );
+    assert!(staged_leftovers(dir.path()).is_empty());
+}
+
+#[test]
+fn remove_config_with_names_the_recovery_path_when_restoration_also_fails() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+    let blocked = path.clone();
+
+    let err = remove_config_with(&path, move || {
+        // Fault injection: occupying the config's path with a directory makes
+        // the restoring rename fail, the one case where the caller is left with
+        // data only in the staging file.
+        fs::create_dir(&blocked).unwrap();
+        Err::<(), _>("index write failed".to_string())
+    })
+    .unwrap_err();
+
+    assert!(err.contains("index write failed"));
+    assert!(err.contains("could not be put back"), "got: {err}");
+    let leftovers = staged_leftovers(dir.path());
+    assert_eq!(leftovers.len(), 1, "the staged copy must survive");
+    assert!(
+        err.contains(leftovers[0].to_str().unwrap()),
+        "the error must name the recovery path; got: {err}"
+    );
+    assert_eq!(
+        fs::read_to_string(&leftovers[0]).unwrap(),
+        "[project]\nname = \"demo\"\n"
+    );
+}
+
+#[test]
+fn remove_config_with_reports_a_failed_staged_cleanup() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = seeded_config(dir.path());
+    let parent = dir.path().to_path_buf();
+
+    let err = remove_config_with(&path, move || {
+        // Fault injection: swap the staged file for a directory of the same
+        // name, so the final `remove_file` fails after the commit succeeded.
+        let staged = staged_leftovers(&parent).pop().unwrap();
+        fs::remove_file(&staged).unwrap();
+        fs::create_dir(&staged).unwrap();
+        Ok(())
+    })
+    .unwrap_err();
+
+    assert!(err.contains("could not be deleted"), "got: {err}");
+    assert!(!path.exists(), "the commit still happened");
 }

@@ -20,6 +20,7 @@ dirs = "6"
 shell-words = "1"
 tempfile = "3"
 toml_edit = "0.22"
+fd-lock = "4.0.4"
 
 [target.'cfg(windows)'.dependencies]
 lnk = "0.5"

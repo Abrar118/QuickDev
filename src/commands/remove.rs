@@ -10,14 +10,14 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
     let (config_path, _root) = resolve_project_config(&cwd)?;
     let mut config = load_project_config(&config_path)?;
 
-    match kind {
+    let announcement = match kind {
         Some(RemoveKind::Terminal { name }) => {
             let before = config.terminals.len();
             config.terminals.retain(|t| t.name != name);
             if config.terminals.len() == before {
                 return Err(format!("terminal '{}' not found", name));
             }
-            println!("Removed terminal '{}'", name);
+            format!("Removed terminal '{name}'")
         }
         Some(RemoveKind::App { name }) => {
             let before = config.applications.len();
@@ -25,14 +25,17 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
             if config.applications.len() == before {
                 return Err(format!("application '{}' not found", name));
             }
-            println!("Removed application '{}'", name);
+            format!("Removed application '{name}'")
         }
         None => {
             return cmd_remove_interactive(config_path, config);
         }
-    }
+    };
 
-    save_project_config(&config_path, &config)
+    // Announce only once the write succeeded — see the note in `add`.
+    save_project_config(&config_path, &config)?;
+    println!("{announcement}");
+    Ok(())
 }
 
 fn cmd_remove_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Result<(), String> {

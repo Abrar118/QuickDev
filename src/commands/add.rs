@@ -13,7 +13,7 @@ pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
     let (config_path, root) = resolve_project_config(&cwd)?;
     let mut config = load_project_config(&config_path)?;
 
-    match kind {
+    let announcement = match kind {
         Some(AddKind::Terminal {
             name,
             path,
@@ -31,7 +31,7 @@ pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
             };
             validate_terminal_entry(&entry, &root)?;
             config.terminals.push(entry);
-            println!("Added terminal '{}'", name);
+            format!("Added terminal '{name}'")
         }
         Some(AddKind::App { name, path, args }) => {
             if config.applications.iter().any(|a| a.name == name) {
@@ -44,14 +44,19 @@ pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
             };
             validate_app_entry(&entry)?;
             config.applications.push(entry);
-            println!("Added application '{}'", name);
+            format!("Added application '{name}'")
         }
         None => {
             return cmd_add_interactive(config_path, root, config);
         }
-    }
+    };
 
-    save_project_config(&config_path, &config)
+    // Only after the write succeeds: a save can fail (a concurrent invocation
+    // changed the file), and announcing the addition first would print "Added …"
+    // immediately above the error explaining that nothing was added.
+    save_project_config(&config_path, &config)?;
+    println!("{announcement}");
+    Ok(())
 }
 
 fn cmd_add_interactive(
@@ -158,16 +163,12 @@ fn pick_application() -> Result<AppEntry, String> {
         items.push(format!("{}  ({})", app.name, app.path));
     }
 
-    let selected = fzf::fzf_select_one(&items, "Select an application:")?;
-
-    // Map the selection back by its position in the presented list rather than
-    // re-parsing the display text: an app name may itself contain the "  ("
-    // separator, which would corrupt a string-split recovery. `items[0]` is the
-    // manual-entry row; `items[i + 1]` is `discovered[i]`.
-    let index = items
-        .iter()
-        .position(|item| item == &selected)
-        .ok_or_else(|| format!("selection '{selected}' not in the list"))?;
+    // Indexed picker: names and paths come from the filesystem, so a bundle
+    // named with a newline or tab could otherwise forge picker rows, and
+    // matching the returned text back against the list would fail for any name
+    // containing the "  (" separator. `items[0]` is the manual-entry row;
+    // `items[i + 1]` is `discovered[i]`.
+    let index = fzf::fzf_select_one_indexed(&items, "Select an application:")?;
 
     if index == 0 {
         return manual_app_entry();

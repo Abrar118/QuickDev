@@ -61,14 +61,115 @@ fn remember(path: &Path, content: Option<&str>) {
     seen.insert(path.to_path_buf(), content.map(str::to_string));
 }
 
+/// Advisory lock file guarding a config's write section.
+///
+/// A sibling file rather than the config itself: [`atomic_write`] replaces the
+/// config by rename, so a lock taken on the config's inode would no longer refer
+/// to the file other processes open. The lock file is created once and left in
+/// place; it holds no content.
+pub fn lock_path_for(path: &Path) -> PathBuf {
+    let mut name = path.file_name().unwrap_or_default().to_os_string();
+    name.push(".lock");
+    path.with_file_name(name)
+}
+
+/// Run `write_section` holding an exclusive lock on `path`'s lock file.
+///
+/// Scoped deliberately tight: re-read, compare, replace. Callers do their
+/// interactive work (fzf pickers, prompts) outside it, so one invocation never
+/// blocks on another's open picker — only on another's brief save.
+///
+/// Without this, two writers could both read the same contents, both pass
+/// [`ensure_unchanged`], and both rename: the second silently wins. The check
+/// and the replace have to be inside the same critical section to close that.
+fn with_config_lock<T>(
+    path: &Path,
+    write_section: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let lock_path = lock_path_for(path);
+    let file = fs::OpenOptions::new()
+        .create(true)
+        .write(true)
+        .truncate(false)
+        .open(&lock_path)
+        .map_err(|e| format!("failed to open {}: {e}", lock_path.display()))?;
+    let mut lock = fd_lock::RwLock::new(file);
+    // Blocking: the holder is only ever inside its own write section, and the
+    // kernel releases the lock if that process dies, so this cannot hang on a
+    // stale lock the way a hand-rolled lock file would.
+    let _guard = lock
+        .write()
+        .map_err(|e| format!("failed to lock {}: {e}", lock_path.display()))?;
+    write_section()
+}
+
+/// Remove `config_path` only if `commit` succeeds — either both happen, or
+/// neither does.
+///
+/// The config is moved to a uniquely-named staging file beside it first.
+/// Uniquely, because `rename` replaces its destination on Unix: a fixed staging
+/// name would destroy a recovery copy left behind by an earlier failed cleanup.
+/// If `commit` fails the config is moved back, and if that restore also fails
+/// the error names the staging file so it can be recovered by hand.
+pub fn remove_config_with<T>(
+    config_path: &Path,
+    commit: impl FnOnce() -> Result<T, String>,
+) -> Result<T, String> {
+    let parent = config_path
+        .parent()
+        .filter(|p| !p.as_os_str().is_empty())
+        .unwrap_or_else(|| Path::new("."));
+    let staged = tempfile::Builder::new()
+        .prefix(".quickdev-deregister-")
+        .tempfile_in(parent)
+        .map_err(|e| format!("failed to stage {}: {e}", config_path.display()))?;
+    // Take the exclusively-created path; the rename replaces the placeholder.
+    // The handle is dropped first so Windows can rename over it.
+    let (file, staged) = staged
+        .keep()
+        .map_err(|e| format!("failed to stage {}: {e}", config_path.display()))?;
+    drop(file);
+
+    if let Err(e) = fs::rename(config_path, &staged) {
+        let _ = fs::remove_file(&staged);
+        return Err(format!(
+            "failed to move {} aside: {e}",
+            config_path.display()
+        ));
+    }
+
+    let committed = match commit() {
+        Ok(value) => value,
+        Err(e) => {
+            return Err(match fs::rename(&staged, config_path) {
+                Ok(()) => e,
+                Err(restore) => format!(
+                    "{e}\nadditionally, {} could not be put back ({restore}) — recover it from {}",
+                    config_path.display(),
+                    staged.display()
+                ),
+            })
+        }
+    };
+
+    fs::remove_file(&staged).map_err(|e| {
+        format!(
+            "removed {} from the index, but its staged copy at {} could not be deleted: {e}",
+            config_path.display(),
+            staged.display()
+        )
+    })?;
+    // The config is gone, so its lock file has nothing left to guard.
+    let _ = fs::remove_file(lock_path_for(config_path));
+    Ok(committed)
+}
+
 /// Refuse to write when the file is not what this process last read.
 ///
-/// This narrows the lost-update window to the microseconds between this check
-/// and the rename in [`atomic_write`]; it does not eliminate it. Closing it
-/// fully needs an advisory lock held across the whole read–modify–write, which
-/// would mean blocking one invocation on another's interactive fzf picker. For a
-/// short-lived single-user CLI, turning a silent overwrite into a "re-run this"
-/// error is the better trade.
+/// Guards against a *stale in-memory model*: a command that loaded the config,
+/// spent time in a picker, and is now writing back a version that predates
+/// someone else's change. [`with_config_lock`] serializes the write sections
+/// themselves; this catches the edit that was already out of date on arrival.
 fn ensure_unchanged(path: &Path, current: Option<&str>) -> Result<(), String> {
     let seen = SEEN.lock().unwrap_or_else(|e| e.into_inner());
     match seen.get(path) {
@@ -211,25 +312,27 @@ pub fn save_global_config(path: &Path, config: &GlobalConfig) -> Result<(), Stri
         fs::create_dir_all(parent)
             .map_err(|e| format!("failed to create config directory: {e}"))?;
     }
-    let current = read_optional(path)?;
-    ensure_unchanged(path, current.as_deref())?;
-    let content = match current {
-        // Edit the file the user has: their comments, formatting, and any keys a
-        // newer QuickDev writes but this build does not model survive the write.
-        Some(existing) => {
-            let mut doc = parse_document(path, &existing)?;
-            apply_global_config(&mut doc, config);
-            doc.to_string()
-        }
-        None => {
-            let serialized = toml::to_string_pretty(config)
-                .map_err(|e| format!("failed to serialize global config: {e}"))?;
-            format!("{GLOBAL_COMMENT_HEADER}\n{serialized}")
-        }
-    };
-    atomic_write(path, &content)?;
-    remember(path, Some(&content));
-    Ok(())
+    with_config_lock(path, || {
+        let current = read_optional(path)?;
+        ensure_unchanged(path, current.as_deref())?;
+        let content = match current {
+            // Edit the file the user has: their comments, formatting, and any
+            // keys a newer QuickDev writes but this build does not model survive.
+            Some(existing) => {
+                let mut doc = parse_document(path, &existing)?;
+                apply_global_config(&mut doc, config);
+                doc.to_string()
+            }
+            None => {
+                let serialized = toml::to_string_pretty(config)
+                    .map_err(|e| format!("failed to serialize global config: {e}"))?;
+                format!("{GLOBAL_COMMENT_HEADER}\n{serialized}")
+            }
+        };
+        atomic_write(path, &content)?;
+        remember(path, Some(&content));
+        Ok(())
+    })
 }
 
 pub fn load_project_config(path: &Path) -> Result<ProjectConfig, String> {
@@ -260,23 +363,25 @@ const TOML_COMMENT_HEADER: &str = "\
 ";
 
 pub fn save_project_config(path: &Path, config: &ProjectConfig) -> Result<(), String> {
-    let current = read_optional(path)?;
-    ensure_unchanged(path, current.as_deref())?;
-    let content = match current {
-        Some(existing) => {
-            let mut doc = parse_document(path, &existing)?;
-            apply_project_config(&mut doc, config);
-            doc.to_string()
-        }
-        None => {
-            let serialized = toml::to_string_pretty(config)
-                .map_err(|e| format!("failed to serialize project config: {e}"))?;
-            format!("{TOML_COMMENT_HEADER}\n{serialized}")
-        }
-    };
-    atomic_write(path, &content)?;
-    remember(path, Some(&content));
-    Ok(())
+    with_config_lock(path, || {
+        let current = read_optional(path)?;
+        ensure_unchanged(path, current.as_deref())?;
+        let content = match current {
+            Some(existing) => {
+                let mut doc = parse_document(path, &existing)?;
+                apply_project_config(&mut doc, config);
+                doc.to_string()
+            }
+            None => {
+                let serialized = toml::to_string_pretty(config)
+                    .map_err(|e| format!("failed to serialize project config: {e}"))?;
+                format!("{TOML_COMMENT_HEADER}\n{serialized}")
+            }
+        };
+        atomic_write(path, &content)?;
+        remember(path, Some(&content));
+        Ok(())
+    })
 }
 
 pub fn find_project_config(start: &Path) -> Result<(PathBuf, PathBuf), String> {
