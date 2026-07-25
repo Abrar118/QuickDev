@@ -3,6 +3,10 @@ use clap::{Parser, Subcommand};
 #[derive(Parser)]
 #[command(
     name = "quickdev",
+    // Sourced from CARGO_PKG_VERSION, so `quickdev --version` always reports the
+    // version the binary was built at — the only way to check which release an
+    // installed binary or the npm wrapper actually shipped.
+    version,
     about = "Manage and launch project terminal/app configurations",
     after_help = "\
 Examples:
