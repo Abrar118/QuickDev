@@ -290,14 +290,155 @@ fn apply_global_config(doc: &mut DocumentMut, config: &GlobalConfig) {
         let mut table = table_named(&previous, &project.name).unwrap_or_default();
         table["name"] = value(project.name.as_str());
         table["path"] = value(project.path.as_str());
+        match project.last_launched {
+            // TOML integers are i64; seconds since 1970 fit for ~292 billion years.
+            Some(secs) => table["last_launched"] = value(secs as i64),
+            None => {
+                table.remove("last_launched");
+            }
+        }
         projects.push(table);
     }
     put_tables(doc, "projects", projects);
 }
 
+/// Where the global index lives: `$QUICKDEV_CONFIG` when set, otherwise the
+/// platform's standard config directory — `$XDG_CONFIG_HOME/quickdev/config.toml`
+/// (default `~/.config`) on macOS and Linux, `%LOCALAPPDATA%\quickdev\config.toml`
+/// on Windows.
+///
+/// Releases before 0.5 kept it in `~/Documents/quickdev/`. The first call that
+/// finds only that file moves it here. If the move fails the old file keeps
+/// being used, so an upgrade can never strand a user's project index.
 pub fn global_config_path() -> Result<PathBuf, String> {
+    let (path, legacy) = match global_config_locations()? {
+        GlobalConfigLocation::Override(path) => return Ok(path),
+        GlobalConfigLocation::Standard { path, legacy } => (path, legacy),
+    };
+    if path.exists() || !legacy.exists() {
+        return Ok(path);
+    }
+    match migrate_global_config(&legacy, &path) {
+        Ok(()) => {
+            anstream::eprintln!(
+                "{}",
+                crate::ui::ok(format!(
+                    "Moved global config to {} (was {})",
+                    crate::ui::tilde(&path.to_string_lossy()),
+                    crate::ui::tilde(&legacy.to_string_lossy())
+                ))
+            );
+            Ok(path)
+        }
+        Err(e) => {
+            anstream::eprintln!(
+                "{}",
+                crate::ui::warn(format!(
+                    "could not move global config to {}: {e}",
+                    path.display()
+                ))
+            );
+            Ok(legacy)
+        }
+    }
+}
+
+/// [`global_config_path`] without the migration: for shell completion, which
+/// runs on every TAB and must neither write files nor print.
+pub fn global_config_path_readonly() -> Result<PathBuf, String> {
+    Ok(match global_config_locations()? {
+        GlobalConfigLocation::Override(path) => path,
+        GlobalConfigLocation::Standard { path, legacy } if !path.exists() && legacy.exists() => {
+            legacy
+        }
+        GlobalConfigLocation::Standard { path, .. } => path,
+    })
+}
+
+enum GlobalConfigLocation {
+    Override(PathBuf),
+    Standard { path: PathBuf, legacy: PathBuf },
+}
+
+fn global_config_locations() -> Result<GlobalConfigLocation, String> {
+    if let Some(path) = std::env::var_os("QUICKDEV_CONFIG").filter(|p| !p.is_empty()) {
+        return Ok(GlobalConfigLocation::Override(PathBuf::from(path)));
+    }
     let home = dirs::home_dir().ok_or("could not determine home directory")?;
-    Ok(home.join("Documents").join("quickdev").join("config.toml"))
+
+    // LOCALAPPDATA rather than the roaming APPDATA: the index holds absolute,
+    // machine-specific paths that mean nothing on another machine.
+    #[cfg(windows)]
+    let base = dirs::config_local_dir().ok_or("could not determine %LOCALAPPDATA%")?;
+    // ~/.config on macOS too (not ~/Library/Application Support), like most
+    // developer CLIs. XDG says to ignore a relative XDG_CONFIG_HOME.
+    #[cfg(not(windows))]
+    let base = std::env::var_os("XDG_CONFIG_HOME")
+        .map(PathBuf::from)
+        .filter(|dir| dir.is_absolute())
+        .unwrap_or_else(|| home.join(".config"));
+
+    Ok(GlobalConfigLocation::Standard {
+        path: base.join("quickdev").join("config.toml"),
+        legacy: home.join("Documents").join("quickdev").join("config.toml"),
+    })
+}
+
+/// Move the global index from `legacy` to `path`, leaving the old file renamed
+/// to `config.toml.migrated` so it's clearly no longer the live copy.
+///
+/// Holds the legacy file's lock throughout, so a write already in progress
+/// finishes before the copy is taken rather than landing in the old file after
+/// it. Two processes migrating at once are fine: the second finds `path`
+/// already in place and does nothing.
+pub fn migrate_global_config(legacy: &Path, path: &Path) -> Result<(), String> {
+    use std::io::Write;
+
+    with_config_lock(legacy, || {
+        if path.exists() {
+            return Ok(());
+        }
+        let content = fs::read_to_string(legacy)
+            .map_err(|e| format!("failed to read {}: {e}", legacy.display()))?;
+        let dir = path.parent().ok_or("config path has no parent directory")?;
+        fs::create_dir_all(dir).map_err(|e| format!("failed to create {}: {e}", dir.display()))?;
+
+        let mut file = tempfile::NamedTempFile::new_in(dir)
+            .map_err(|e| format!("failed to stage {}: {e}", path.display()))?;
+        file.write_all(content.as_bytes())
+            .and_then(|()| file.as_file().sync_all())
+            .map_err(|e| format!("failed to write {}: {e}", path.display()))?;
+        #[cfg(unix)]
+        if let Ok(existing) = fs::metadata(legacy) {
+            let _ = file.as_file().set_permissions(existing.permissions());
+        }
+        // No-clobber: a config created at the new path since the check above
+        // wins over the copy.
+        match file.persist_noclobber(path) {
+            Ok(_) => {}
+            Err(e) if e.error.kind() == std::io::ErrorKind::AlreadyExists => return Ok(()),
+            Err(e) => return Err(format!("failed to create {}: {}", path.display(), e.error)),
+        }
+
+        // Best effort: the new file already takes precedence, so a leftover
+        // legacy copy is harmless — renaming it just avoids confusion. The
+        // first unused name, because `rename` replaces its destination on Unix
+        // and an earlier migration's backup may already be there.
+        let retired = (1..)
+            .map(|n| {
+                let mut name = legacy.as_os_str().to_os_string();
+                name.push(if n == 1 {
+                    ".migrated".to_string()
+                } else {
+                    format!(".migrated.{n}")
+                });
+                PathBuf::from(name)
+            })
+            .find(|candidate| fs::symlink_metadata(candidate).is_err())
+            .expect("an unbounded range always yields an unused name");
+        let _ = fs::rename(legacy, retired);
+        Ok(())
+    })
 }
 
 pub fn load_global_config(path: &Path) -> Result<GlobalConfig, String> {
@@ -441,6 +582,7 @@ pub fn register_existing_project_config(
     global.projects.push(GlobalProjectEntry {
         name: project_name.clone(),
         path: project_path,
+        last_launched: None,
     });
     Ok(project_name)
 }
@@ -510,6 +652,7 @@ pub struct ProjectStatus {
     pub path: String,
     pub path_exists: bool,
     pub config_exists: bool,
+    pub last_launched: Option<u64>,
 }
 
 impl ProjectStatus {
@@ -537,11 +680,43 @@ pub fn project_status(entry: &GlobalProjectEntry) -> ProjectStatus {
         path: entry.path.clone(),
         path_exists,
         config_exists,
+        last_launched: entry.last_launched,
     }
 }
 
+/// Statuses for every registered project, most recently launched first.
 pub fn project_statuses(global: &GlobalConfig) -> Vec<ProjectStatus> {
-    global.projects.iter().map(project_status).collect()
+    projects_by_recency(global)
+        .into_iter()
+        .map(project_status)
+        .collect()
+}
+
+/// Registered projects, most recently launched first. Never-launched projects
+/// follow in index order (the sort is stable).
+pub fn projects_by_recency(global: &GlobalConfig) -> Vec<&GlobalProjectEntry> {
+    let mut projects: Vec<_> = global.projects.iter().collect();
+    projects.sort_by_key(|p| std::cmp::Reverse(p.last_launched));
+    projects
+}
+
+/// Stamp the project registered at `root` as launched now.
+///
+/// Re-reads the index rather than taking the caller's copy: `launch` loaded it
+/// before an fzf picker that can stay open for minutes, and writing that stale
+/// copy back would trip the changed-on-disk check (or undo another command's
+/// edit). An unregistered root is not an error — there is nothing to stamp.
+pub fn record_launch(global_path: &Path, root: &Path) -> Result<(), String> {
+    let mut global = load_global_config(global_path)?;
+    let root = root.to_string_lossy();
+    let Some(entry) = global.projects.iter_mut().find(|p| p.path == root) else {
+        return Ok(());
+    };
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map_err(|e| format!("system clock is before 1970: {e}"))?;
+    entry.last_launched = Some(now.as_secs());
+    save_global_config(global_path, &global)
 }
 
 /// Subset of statuses that are not healthy (path or config missing).
@@ -564,25 +739,28 @@ pub fn prune_projects(global: &mut GlobalConfig) -> Vec<String> {
     removed
 }
 
+/// `s` as a quoted JSON string literal.
+pub fn json_string(s: &str) -> String {
+    use std::fmt::Write as _;
+
+    let mut out = String::with_capacity(s.len() + 2);
+    out.push('"');
+    for c in s.chars() {
+        match c {
+            '"' => out.push_str("\\\""),
+            '\\' => out.push_str("\\\\"),
+            c if c < ' ' => {
+                let _ = write!(out, "\\u{:04x}", c as u32);
+            }
+            c => out.push(c),
+        }
+    }
+    out.push('"');
+    out
+}
+
 /// Serialize project statuses to a JSON array string for `list --json`.
 pub fn projects_json(statuses: &[ProjectStatus]) -> String {
-    fn esc(s: &str) -> String {
-        use std::fmt::Write as _;
-
-        let mut out = String::with_capacity(s.len());
-        for c in s.chars() {
-            match c {
-                '"' => out.push_str("\\\""),
-                '\\' => out.push_str("\\\\"),
-                c if c < ' ' => {
-                    let _ = write!(out, "\\u{:04x}", c as u32);
-                }
-                c => out.push(c),
-            }
-        }
-        out
-    }
-
     if statuses.is_empty() {
         return "[]".to_string();
     }
@@ -593,12 +771,14 @@ pub fn projects_json(statuses: &[ProjectStatus]) -> String {
             out.push(',');
         }
         out.push_str(&format!(
-            "\n  {{\"name\": \"{}\", \"path\": \"{}\", \"healthy\": {}, \"path_exists\": {}, \"config_exists\": {}}}",
-            esc(&s.name),
-            esc(&s.path),
+            "\n  {{\"name\": {}, \"path\": {}, \"healthy\": {}, \"path_exists\": {}, \"config_exists\": {}, \"last_launched\": {}}}",
+            json_string(&s.name),
+            json_string(&s.path),
             s.is_healthy(),
             s.path_exists,
-            s.config_exists
+            s.config_exists,
+            s.last_launched
+                .map_or_else(|| "null".to_string(), |t| t.to_string())
         ));
     }
     out.push_str("\n]");
@@ -622,8 +802,8 @@ fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
         );
     }
 
-    let items: Vec<String> = global
-        .projects
+    let projects = projects_by_recency(&global);
+    let items: Vec<String> = projects
         .iter()
         .map(|p| format!("{}    {}", p.name, p.path))
         .collect();
@@ -631,7 +811,7 @@ fn fzf_select_project() -> Result<(PathBuf, PathBuf), String> {
     // Indexed picker: the row's position identifies the project, so a name or
     // path containing the visible separator cannot break the round-trip.
     let index = fzf::fzf_select_one_indexed(&items, "Select a project:")?;
-    let entry = global.projects.get(index).ok_or("invalid selection")?;
+    let entry = projects.get(index).ok_or("invalid selection")?;
 
     let root = PathBuf::from(&entry.path);
     let config_path = root.join(".quickdev.toml");

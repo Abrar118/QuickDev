@@ -1,5 +1,5 @@
 use quickdev::config::ProjectStatus;
-use quickdev::doctor::{doctor_has_errors, render_doctor, DoctorReport};
+use quickdev::doctor::{doctor_has_errors, render_doctor, render_doctor_json, DoctorReport};
 
 /// Rendered output with ANSI styling removed, as it prints when piped.
 fn plain(styled: &str) -> String {
@@ -12,6 +12,7 @@ fn status(name: &str, healthy: bool) -> ProjectStatus {
         path: format!("/p/{name}"),
         path_exists: healthy,
         config_exists: healthy,
+        last_launched: None,
     }
 }
 
@@ -62,4 +63,17 @@ fn bad_global_config_is_error() {
     assert!(doctor_has_errors(&report));
     let out = plain(&render_doctor(&report));
     assert!(out.contains("✗ global config"));
+}
+
+#[test]
+fn json_report_flags_unhealthy_projects() {
+    let report = DoctorReport {
+        global_config_ok: true,
+        fzf_available: false,
+        projects: vec![status("dead", false)],
+    };
+    let json = render_doctor_json(&report);
+    assert!(json.contains("\"ok\": false"));
+    assert!(json.contains("\"fzf_available\": false"));
+    assert!(json.contains("\"name\": \"dead\""));
 }

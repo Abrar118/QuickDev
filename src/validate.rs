@@ -1,5 +1,5 @@
 use crate::adapters::resolve_command;
-use crate::config::is_supported_emulator;
+use crate::config::{is_supported_emulator, json_string};
 use crate::launch::{normalize_path, resolve_terminal_path, KNOWN_PLACEHOLDERS};
 use crate::models::{AppEntry, ProjectConfig, TerminalEntry};
 use std::path::Path;
@@ -75,6 +75,22 @@ pub struct ValidationReport {
 impl ValidationReport {
     pub fn is_ok(&self) -> bool {
         self.errors.is_empty()
+    }
+
+    /// Machine-readable form for `validate --json`. `config_path` is `None`
+    /// when no config was found to validate.
+    pub fn to_json(&self, config_path: Option<&str>) -> String {
+        let list = |items: &[String]| {
+            let quoted: Vec<String> = items.iter().map(|i| json_string(i)).collect();
+            format!("[{}]", quoted.join(", "))
+        };
+        format!(
+            "{{\n  \"path\": {},\n  \"valid\": {},\n  \"errors\": {},\n  \"warnings\": {}\n}}",
+            config_path.map_or_else(|| "null".to_string(), json_string),
+            self.is_ok(),
+            list(&self.errors),
+            list(&self.warnings)
+        )
     }
 }
 

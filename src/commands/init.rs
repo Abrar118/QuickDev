@@ -51,7 +51,10 @@ pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
                 .iter()
                 .find(|p| p.name == *source_name)
                 .ok_or_else(|| {
-                    format!("source project '{}' not found in global index", source_name)
+                    ui::with_suggestion(
+                        format!("source project '{source_name}' not found in global index"),
+                        ui::closest(source_name, global.projects.iter().map(|p| p.name.as_str())),
+                    )
                 })?;
             let source_path = PathBuf::from(&source_entry.path).join(".quickdev.toml");
             let source = load_project_config(&source_path)?;
@@ -77,6 +80,7 @@ pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
     global.projects.push(GlobalProjectEntry {
         name: project_name.clone(),
         path: cwd_str,
+        last_launched: None,
     });
     if let Err(e) = save_global_config(&global_path, &global) {
         // Roll back the config we just created rather than leaving an

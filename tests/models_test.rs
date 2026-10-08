@@ -50,10 +50,12 @@ fn global_config_round_trip() {
             GlobalProjectEntry {
                 name: "app-one".to_string(),
                 path: "/tmp/app-one".to_string(),
+                last_launched: None,
             },
             GlobalProjectEntry {
                 name: "app-two".to_string(),
                 path: "/tmp/app-two".to_string(),
+                last_launched: None,
             },
         ],
     };
