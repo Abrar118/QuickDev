@@ -8,6 +8,7 @@ fn entry(name: &str, path: &str) -> GlobalProjectEntry {
     GlobalProjectEntry {
         name: name.to_string(),
         path: path.to_string(),
+        last_launched: None,
     }
 }
 
@@ -74,12 +75,14 @@ fn missing_statuses_filters_unhealthy() {
         path: "/ok".to_string(),
         path_exists: true,
         config_exists: true,
+        last_launched: None,
     };
     let broken = ProjectStatus {
         name: "broken".to_string(),
         path: "/broken".to_string(),
         path_exists: false,
         config_exists: false,
+        last_launched: None,
     };
     let statuses = vec![healthy, broken];
 

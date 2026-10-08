@@ -6,6 +6,7 @@ fn status(name: &str, path_exists: bool, config_exists: bool) -> ProjectStatus {
         path: format!("/p/{name}"),
         path_exists,
         config_exists,
+        last_launched: None,
     }
 }
 

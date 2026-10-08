@@ -1,16 +1,54 @@
-use crate::config::{load_project_config, resolve_project_config};
+use crate::config::{find_project_config, load_project_config, resolve_project_config};
 use crate::ui;
-use crate::validate::validate_project_config;
+use crate::validate::{validate_project_config, ValidationReport};
 use anstream::println;
 use std::env;
 
-pub(crate) fn cmd_validate() -> Result<(), String> {
+pub(crate) fn cmd_validate(json: bool) -> Result<(), String> {
     let cwd =
         env::current_dir().map_err(|e| format!("could not determine current directory: {e}"))?;
-    let (config_path, project_root) = resolve_project_config(&cwd)?;
-    let config = load_project_config(&config_path)?;
+    // JSON output is for scripts and CI: never open the interactive project
+    // picker, and report a missing config in the JSON itself.
+    let located = if json {
+        find_project_config(&cwd)
+    } else {
+        resolve_project_config(&cwd)
+    };
+    let (config_path, project_root) = match located {
+        Ok(found) => found,
+        Err(e) if json => {
+            let report = ValidationReport {
+                errors: vec![e.clone()],
+                warnings: vec![],
+            };
+            println!("{}", report.to_json(None));
+            return Err(e);
+        }
+        Err(e) => return Err(e),
+    };
+    // A config that can't be loaded is the most basic validation failure:
+    // report it like any other error, so `--json` consumers still get a report.
+    let report = match load_project_config(&config_path) {
+        Ok(config) => validate_project_config(&config, &project_root),
+        Err(e) => ValidationReport {
+            errors: vec![e],
+            warnings: vec![],
+        },
+    };
+    let result = if report.is_ok() {
+        Ok(())
+    } else {
+        Err(format!(
+            "{} has {} error(s)",
+            config_path.display(),
+            report.errors.len()
+        ))
+    };
 
-    let report = validate_project_config(&config, &project_root);
+    if json {
+        println!("{}", report.to_json(Some(&config_path.to_string_lossy())));
+        return result;
+    }
 
     for err in &report.errors {
         println!("{}", ui::fail(err));
@@ -35,12 +73,6 @@ pub(crate) fn cmd_validate() -> Result<(), String> {
                 ))
             );
         }
-        Ok(())
-    } else {
-        Err(format!(
-            "{} has {} error(s)",
-            config_path.display(),
-            report.errors.len()
-        ))
     }
+    result
 }

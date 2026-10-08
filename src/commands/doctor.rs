@@ -2,19 +2,23 @@ use crate::config::{
     global_config_path, load_global_config, load_project_config, project_statuses, prune_projects,
     save_global_config, save_project_config,
 };
-use crate::doctor::{doctor_has_errors, render_doctor, DoctorReport};
+use crate::doctor::{doctor_has_errors, render_doctor, render_doctor_json, DoctorReport};
 use crate::fzf;
 use crate::ui;
 use anstream::{print, println};
 use std::path::PathBuf;
 
-pub(crate) fn cmd_doctor(fix: bool) -> Result<(), String> {
+pub(crate) fn cmd_doctor(fix: bool, json: bool) -> Result<(), String> {
     if fix {
         run_fix()?;
     }
 
     let report = gather_report()?;
-    print!("{}", render_doctor(&report));
+    if json {
+        println!("{}", render_doctor_json(&report));
+    } else {
+        print!("{}", render_doctor(&report));
+    }
 
     if doctor_has_errors(&report) {
         Err("doctor found problems (run 'quickdev doctor --fix' to repair)".to_string())

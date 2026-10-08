@@ -103,3 +103,23 @@ fn infer_tool_id_still_matches_by_name_for_arg_defaults() {
         Some("vscode".to_string())
     );
 }
+
+#[test]
+fn emulator_installed_agrees_with_the_launch_probes() {
+    use quickdev::adapters::{command_exists, emulator_installed, resolve_kitty};
+    let kitty_launchable = !cfg!(target_os = "windows") && resolve_kitty().is_some();
+    assert_eq!(emulator_installed("kitty"), kitty_launchable);
+    assert_eq!(emulator_installed("ghostty"), command_exists("ghostty"));
+    assert!(!emulator_installed("nonexistent-terminal"));
+    if cfg!(any(target_os = "macos", target_os = "windows")) {
+        assert!(
+            emulator_installed("terminal"),
+            "the native terminal always exists"
+        );
+        assert!(
+            !emulator_installed("gnome-terminal"),
+            "launch rejects it here"
+        );
+        assert!(!emulator_installed("ptyxis"), "launch rejects it here");
+    }
+}

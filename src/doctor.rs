@@ -1,4 +1,4 @@
-use crate::config::ProjectStatus;
+use crate::config::{projects_json, ProjectStatus};
 use crate::ui::{self, BOLD, DIM, RED};
 use std::fmt::Write;
 
@@ -13,6 +13,17 @@ pub struct DoctorReport {
 /// A missing `fzf` is a warning, not an error.
 pub fn doctor_has_errors(report: &DoctorReport) -> bool {
     !report.global_config_ok || report.projects.iter().any(|p| !p.is_healthy())
+}
+
+/// Machine-readable form of the report for `doctor --json`.
+pub fn render_doctor_json(report: &DoctorReport) -> String {
+    format!(
+        "{{\n  \"ok\": {},\n  \"global_config_ok\": {},\n  \"fzf_available\": {},\n  \"projects\": {}\n}}",
+        !doctor_has_errors(report),
+        report.global_config_ok,
+        report.fzf_available,
+        projects_json(&report.projects)
+    )
 }
 
 pub fn render_doctor(report: &DoctorReport) -> String {

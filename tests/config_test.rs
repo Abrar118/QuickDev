@@ -1,7 +1,7 @@
 use quickdev::config::{
-    find_project_config, load_global_config, load_project_config, register_existing_project_config,
-    remove_config_with, resolve_project_config, save_global_config, save_project_config,
-    unique_project_name,
+    find_project_config, load_global_config, load_project_config, migrate_global_config,
+    projects_by_recency, record_launch, register_existing_project_config, remove_config_with,
+    resolve_project_config, save_global_config, save_project_config, unique_project_name,
 };
 use quickdev::models::{
     GlobalConfig, GlobalProjectEntry, ProjectConfig, ProjectEntry, TerminalEntry,
@@ -45,6 +45,7 @@ fn save_and_load_global_config() {
         projects: vec![GlobalProjectEntry {
             name: "proj-a".to_string(),
             path: "/tmp/proj-a".to_string(),
+            last_launched: None,
         }],
     };
 
@@ -101,10 +102,12 @@ fn unique_project_name_appends_suffix() {
             GlobalProjectEntry {
                 name: "my-app".to_string(),
                 path: "/a".to_string(),
+                last_launched: None,
             },
             GlobalProjectEntry {
                 name: "my-app-2".to_string(),
                 path: "/b".to_string(),
+                last_launched: None,
             },
         ],
     };
@@ -223,6 +226,7 @@ fn renamed_project_config_persists() {
         projects: vec![GlobalProjectEntry {
             name: "api".to_string(),
             path: "/tmp/other".to_string(),
+            last_launched: None,
         }],
     };
     let unique = unique_project_name("api", &global);
@@ -257,6 +261,7 @@ fn register_existing_project_config_syncs_local_name_and_global_index() {
         projects: vec![GlobalProjectEntry {
             name: "api".to_string(),
             path: "/tmp/other".to_string(),
+            last_launched: None,
         }],
     };
 
@@ -735,5 +740,86 @@ fn a_concurrent_save_cannot_resurrect_a_config_being_deleted() {
     assert!(
         save_took >= COMMIT_HELD / 2,
         "the save was not blocked by the delete's lock (took {save_took:?})"
+    );
+}
+
+#[test]
+fn migrating_the_global_config_moves_it_and_retires_the_old_file() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("Documents/quickdev/config.toml");
+    let path = dir.path().join(".config/quickdev/config.toml");
+    fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    let content = "# keep my comment\n[[projects]]\nname = \"api\"\npath = \"/p/api\"\n";
+    fs::write(&legacy, content).unwrap();
+
+    migrate_global_config(&legacy, &path).unwrap();
+
+    assert_eq!(
+        fs::read_to_string(&path).unwrap(),
+        content,
+        "copied verbatim"
+    );
+    assert!(!legacy.exists(), "the old file is no longer the live copy");
+    assert!(legacy.with_extension("toml.migrated").exists());
+}
+
+#[test]
+fn migrating_never_overwrites_an_existing_global_config() {
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("old.toml");
+    let path = dir.path().join("new/config.toml");
+    fs::write(&legacy, "old").unwrap();
+    fs::create_dir_all(path.parent().unwrap()).unwrap();
+    fs::write(&path, "new").unwrap();
+
+    migrate_global_config(&legacy, &path).unwrap();
+
+    assert_eq!(fs::read_to_string(&path).unwrap(), "new");
+    assert_eq!(fs::read_to_string(&legacy).unwrap(), "old", "left alone");
+}
+
+#[test]
+fn recorded_launches_order_projects_most_recent_first() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("config.toml");
+    fs::write(
+        &path,
+        "# my notes\nterminal_app_tabbing_prompt_declined = false\n\n[[projects]]\nname = \"a\"\npath = \"/a\"\n\n[[projects]]\nname = \"b\"\npath = \"/b\"\n\n[[projects]]\nname = \"c\"\npath = \"/c\"\nlast_launched = 100\n",
+    )
+    .unwrap();
+
+    record_launch(&path, std::path::Path::new("/b")).unwrap();
+    record_launch(&path, std::path::Path::new("/not-registered")).unwrap();
+
+    let global = load_global_config(&path).unwrap();
+    let order: Vec<&str> = projects_by_recency(&global)
+        .iter()
+        .map(|p| p.name.as_str())
+        .collect();
+    assert_eq!(order, ["b", "c", "a"], "just-launched, older, never");
+    assert!(fs::read_to_string(&path).unwrap().starts_with("# my notes"));
+}
+
+#[test]
+fn migrating_again_never_overwrites_an_earlier_backup() {
+    // A first migration retired the legacy file to `.migrated`. If a legacy
+    // config reappears (an older quickdev recreated it) and the new config is
+    // gone, a second migration must not destroy that first backup.
+    let dir = tempfile::tempdir().unwrap();
+    let legacy = dir.path().join("Documents/config.toml");
+    let path = dir.path().join(".config/quickdev/config.toml");
+    fs::create_dir_all(legacy.parent().unwrap()).unwrap();
+    let first_backup = legacy.with_extension("toml.migrated");
+    fs::write(&first_backup, "earlier index").unwrap();
+    fs::write(&legacy, "newer index").unwrap();
+
+    migrate_global_config(&legacy, &path).unwrap();
+
+    assert_eq!(fs::read_to_string(&path).unwrap(), "newer index");
+    assert_eq!(fs::read_to_string(&first_backup).unwrap(), "earlier index");
+    assert!(!legacy.exists());
+    assert_eq!(
+        fs::read_to_string(legacy.with_extension("toml.migrated.2")).unwrap(),
+        "newer index"
     );
 }

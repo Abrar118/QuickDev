@@ -221,3 +221,17 @@ fn validate_rejects_hand_authored_entries_that_add_would_refuse() {
         .iter()
         .any(|e| e.contains("control characters")));
 }
+
+#[test]
+fn report_json_lists_errors_and_escapes_text() {
+    use quickdev::validate::ValidationReport;
+    let report = ValidationReport {
+        errors: vec!["bad \"path\"".to_string()],
+        warnings: vec![],
+    };
+    let json = report.to_json(Some("/p/.quickdev.toml"));
+    assert!(json.contains("\"path\": \"/p/.quickdev.toml\""));
+    assert!(json.contains("\"valid\": false"));
+    assert!(json.contains("\"errors\": [\"bad \\\"path\\\"\"]"));
+    assert!(json.contains("\"warnings\": []"));
+}

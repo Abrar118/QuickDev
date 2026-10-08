@@ -1,8 +1,8 @@
 use crate::adapters::{command_exists, resolve_kitty};
 use crate::commands::shared::{build_item_display_list, selected_items};
 use crate::config::{
-    global_config_path, load_global_config, load_project_config, resolve_project_config,
-    save_global_config,
+    global_config_path, load_global_config, load_project_config, record_launch,
+    resolve_project_config, save_global_config,
 };
 use crate::fzf;
 use crate::launch::{launch_project, plan_launch, render_results};
@@ -25,7 +25,12 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> R
                 .projects
                 .iter()
                 .find(|p| p.name == *name)
-                .ok_or_else(|| format!("project '{}' not found in global index", name))?;
+                .ok_or_else(|| {
+                    ui::with_suggestion(
+                        format!("project '{name}' not found in global index"),
+                        ui::closest(name, global.projects.iter().map(|p| p.name.as_str())),
+                    )
+                })?;
             let root = PathBuf::from(&entry.path);
             let config_path = root.join(".quickdev.toml");
             let config = load_project_config(&config_path)?;
@@ -113,6 +118,11 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> R
     let any_success = results.iter().any(|r| r.success);
     if !any_success {
         process::exit(1);
+    }
+    // Best effort: failing to update the recency stamp must not turn a
+    // successful launch into an error.
+    if let Err(e) = record_launch(&global_path, &project_root) {
+        eprintln!("{}", ui::warn(format!("could not record launch time: {e}")));
     }
 
     Ok(())

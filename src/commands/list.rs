@@ -101,11 +101,21 @@ fn project_block(status: &ProjectStatus, global_emulator: Option<&str>) -> (bool
     } else {
         ui::paint(RED, "✗")
     };
-    let mut lines = vec![format!(
+    let mut header = format!(
         "{marker} {}  {}",
         ui::paint(BOLD, sanitize_row(&status.name)),
         ui::paint(DIM, ui::tilde(&sanitize_row(&status.path)))
-    )];
+    );
+    if let Some(then) = status.last_launched {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map_or(then, |d| d.as_secs());
+        header.push_str(&format!(
+            "  {}",
+            ui::paint(DIM, format!("· launched {}", ui::ago(then, now)))
+        ));
+    }
+    let mut lines = vec![header];
 
     let cfg = match config {
         Err(issue) => {

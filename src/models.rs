@@ -17,6 +17,10 @@ pub struct GlobalConfig {
 pub struct GlobalProjectEntry {
     pub name: String,
     pub path: String,
+    /// Unix time (seconds) of the last successful `quickdev launch`; orders
+    /// `list` and the project picker most-recent first.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub last_launched: Option<u64>,
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -1,7 +1,10 @@
+use crate::adapters::emulator_installed;
 use crate::apps;
 use crate::cli::AddKind;
 use crate::commands::shared::prompt;
-use crate::config::{load_project_config, resolve_project_config, save_project_config};
+use crate::config::{
+    load_project_config, resolve_project_config, save_project_config, SUPPORTED_EMULATORS,
+};
 use crate::fzf;
 use crate::models::{AppEntry, ProjectConfig, TerminalEntry};
 use crate::parse;
@@ -146,20 +149,26 @@ fn cmd_add_interactive(
 }
 
 fn pick_emulator() -> Result<Option<String>, String> {
-    let options = vec![
-        "Auto-detect (default)".to_string(),
-        "ghostty".to_string(),
-        "terminal".to_string(),
-        "gnome-terminal".to_string(),
-        "ptyxis".to_string(),
-        "kitty".to_string(),
-    ];
-    let selected = fzf::fzf_select_one(&options, "Select terminal emulator:")?;
+    let mut emulators: Vec<(&str, bool)> = SUPPORTED_EMULATORS
+        .iter()
+        .map(|e| (*e, emulator_installed(e)))
+        .collect();
+    // Installed ones first; the stable sort keeps the canonical order within
+    // each group.
+    emulators.sort_by_key(|(_, installed)| !installed);
 
-    match selected.as_str() {
-        "Auto-detect (default)" => Ok(None),
-        other => Ok(Some(other.to_string())),
-    }
+    let mut rows = vec!["Auto-detect (default)".to_string()];
+    rows.extend(emulators.iter().map(|(name, installed)| {
+        if *installed {
+            format!("{name} (installed)")
+        } else {
+            name.to_string()
+        }
+    }));
+
+    // Row 0 is auto-detect; row i + 1 is emulators[i].
+    let index = fzf::fzf_select_one_indexed(&rows, "Select terminal emulator:")?;
+    Ok(index.checked_sub(1).map(|i| emulators[i].0.to_string()))
 }
 
 fn pick_application() -> Result<AppEntry, String> {

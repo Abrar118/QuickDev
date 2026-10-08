@@ -67,3 +67,37 @@ pub fn count(n: usize, word: &str) -> String {
         format!("{n} {word}s")
     }
 }
+
+/// The candidate most similar to `input`, if any is close enough to be worth
+/// suggesting. Same measure and cutoff clap uses for mistyped subcommands.
+pub fn closest<'a>(input: &str, candidates: impl IntoIterator<Item = &'a str>) -> Option<&'a str> {
+    candidates
+        .into_iter()
+        .map(|c| (strsim::jaro(input, c), c))
+        .filter(|(score, _)| *score > 0.7)
+        .max_by(|a, b| a.0.total_cmp(&b.0))
+        .map(|(_, c)| c)
+}
+
+/// `message`, plus a clap-style "did you mean" tip when there is a suggestion.
+pub fn with_suggestion(message: String, suggestion: Option<&str>) -> String {
+    match suggestion {
+        Some(s) => format!(
+            "{message}\n\n  {} did you mean '{s}'?",
+            paint(GREEN, "tip:")
+        ),
+        None => message,
+    }
+}
+
+/// Coarse "how long ago" for a Unix timestamp: `just now`, `5m ago`, `3h ago`,
+/// `2d ago`. A timestamp in the future (clock skew) reads as `just now`.
+pub fn ago(then: u64, now: u64) -> String {
+    let secs = now.saturating_sub(then);
+    match secs {
+        0..60 => "just now".to_string(),
+        60..3_600 => format!("{}m ago", secs / 60),
+        3_600..86_400 => format!("{}h ago", secs / 3_600),
+        _ => format!("{}d ago", secs / 86_400),
+    }
+}

@@ -30,12 +30,23 @@ mod terminal_app;
 mod ui;
 mod validate;
 
-use clap::Parser;
+use clap::{CommandFactory, Parser};
+use clap_complete::CompleteEnv;
 use cli::{Cli, Commands};
 use std::process;
 
 fn main() {
+    // Answers shell TAB requests (`COMPLETE=<shell> quickdev …`) and exits;
+    // a normal run falls straight through. Must run before anything is printed.
+    CompleteEnv::with_factory(Cli::command).complete();
+
     let cli = Cli::parse();
+    // Every styled print goes through anstream, which consults this global.
+    anstream::ColorChoice::write_global(match cli.color {
+        clap::ColorChoice::Always => anstream::ColorChoice::Always,
+        clap::ColorChoice::Never => anstream::ColorChoice::Never,
+        clap::ColorChoice::Auto => anstream::ColorChoice::Auto,
+    });
 
     let result = match cli.command {
         Commands::Init { from } => commands::cmd_init(from),
@@ -51,9 +62,10 @@ fn main() {
         Commands::Deregister { delete } => commands::cmd_deregister(delete),
         Commands::Config { action } => commands::cmd_config(action),
         Commands::Prune => commands::cmd_prune(),
-        Commands::Validate => commands::cmd_validate(),
-        Commands::Doctor { fix } => commands::cmd_doctor(fix),
+        Commands::Validate { json } => commands::cmd_validate(json),
+        Commands::Doctor { fix, json } => commands::cmd_doctor(fix, json),
         Commands::Capture { all } => commands::cmd_capture(all),
+        Commands::Completions { shell } => commands::cmd_completions(shell),
     };
 
     if let Err(e) = result {

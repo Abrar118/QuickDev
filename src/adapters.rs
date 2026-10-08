@@ -138,6 +138,29 @@ pub fn resolve_kitty() -> Option<String> {
     }
 }
 
+/// Whether `emulator` (a `SUPPORTED_EMULATORS` value) can launch on this
+/// machine, probed exactly the way the launchers probe it — so the picker never
+/// marks an emulator installed that `launch` would then report as not found.
+pub fn emulator_installed(emulator: &str) -> bool {
+    let unix_not_macos = cfg!(not(any(target_os = "macos", target_os = "windows")));
+    match emulator {
+        "kitty" => !cfg!(target_os = "windows") && resolve_kitty().is_some(),
+        "ghostty" => command_exists("ghostty"),
+        // Terminal.app and Windows' wt/cmd always exist. Elsewhere "terminal" is
+        // whatever `run_in_platform_terminal` finds first.
+        "terminal" => {
+            !unix_not_macos
+                || resolve_kitty().is_some()
+                || ["ptyxis", "gnome-terminal", "konsole", "alacritty", "xterm"]
+                    .iter()
+                    .any(|bin| command_exists(bin))
+        }
+        // Launch rejects these on macOS and Windows ("only available on Linux").
+        "gnome-terminal" | "ptyxis" => unix_not_macos && command_exists(emulator),
+        _ => false,
+    }
+}
+
 pub fn resolve_command(command: &str) -> Option<String> {
     #[cfg(target_os = "windows")]
     {

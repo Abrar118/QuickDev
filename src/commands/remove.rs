@@ -17,7 +17,10 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
             let before = config.terminals.len();
             config.terminals.retain(|t| t.name != name);
             if config.terminals.len() == before {
-                return Err(format!("terminal '{}' not found", name));
+                return Err(ui::with_suggestion(
+                    format!("terminal '{name}' not found"),
+                    ui::closest(&name, config.terminals.iter().map(|t| t.name.as_str())),
+                ));
             }
             format!("Removed terminal {}", ui::paint(ui::BOLD, &name))
         }
@@ -25,7 +28,10 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
             let before = config.applications.len();
             config.applications.retain(|a| a.name != name);
             if config.applications.len() == before {
-                return Err(format!("application '{}' not found", name));
+                return Err(ui::with_suggestion(
+                    format!("application '{name}' not found"),
+                    ui::closest(&name, config.applications.iter().map(|a| a.name.as_str())),
+                ));
             }
             format!("Removed application {}", ui::paint(ui::BOLD, &name))
         }
