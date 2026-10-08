@@ -1,5 +1,7 @@
 use crate::config::{load_project_config, resolve_project_config};
+use crate::ui;
 use crate::validate::validate_project_config;
+use anstream::println;
 use std::env;
 
 pub(crate) fn cmd_validate() -> Result<(), String> {
@@ -11,20 +13,26 @@ pub(crate) fn cmd_validate() -> Result<(), String> {
     let report = validate_project_config(&config, &project_root);
 
     for err in &report.errors {
-        println!("✗ {err}");
+        println!("{}", ui::fail(err));
     }
     for warn in &report.warnings {
-        println!("⚠ {warn}");
+        println!("{}", ui::warn(warn));
     }
 
     if report.is_ok() {
+        let path = ui::tilde(&config_path.to_string_lossy());
         if report.warnings.is_empty() {
-            println!("✓ {} is valid", config_path.display());
+            println!("{}", ui::ok(format!("{path} is valid")));
         } else {
             println!(
-                "✓ {} is valid ({} warning(s))",
-                config_path.display(),
-                report.warnings.len()
+                "{}",
+                ui::ok(format!(
+                    "{path} is valid {}",
+                    ui::paint(
+                        ui::YELLOW,
+                        format!("({})", ui::count(report.warnings.len(), "warning"))
+                    )
+                ))
             );
         }
         Ok(())

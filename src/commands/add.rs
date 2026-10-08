@@ -5,7 +5,9 @@ use crate::config::{load_project_config, resolve_project_config, save_project_co
 use crate::fzf;
 use crate::models::{AppEntry, ProjectConfig, TerminalEntry};
 use crate::parse;
+use crate::ui;
 use crate::validate::{validate_app_entry, validate_terminal_entry};
+use anstream::println;
 use std::path::PathBuf;
 
 pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
@@ -31,7 +33,7 @@ pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
             };
             validate_terminal_entry(&entry, &root)?;
             config.terminals.push(entry);
-            format!("Added terminal '{name}'")
+            format!("Added terminal {}", ui::paint(ui::BOLD, &name))
         }
         Some(AddKind::App { name, path, args }) => {
             if config.applications.iter().any(|a| a.name == name) {
@@ -44,7 +46,7 @@ pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
             };
             validate_app_entry(&entry)?;
             config.applications.push(entry);
-            format!("Added application '{name}'")
+            format!("Added application {}", ui::paint(ui::BOLD, &name))
         }
         None => {
             return cmd_add_interactive(config_path, root, config);
@@ -55,7 +57,7 @@ pub(crate) fn cmd_add(kind: Option<AddKind>) -> Result<(), String> {
     // changed the file), and announcing the addition first would print "Added …"
     // immediately above the error explaining that nothing was added.
     save_project_config(&config_path, &config)?;
-    println!("{announcement}");
+    println!("{}", ui::ok(announcement));
     Ok(())
 }
 
@@ -99,7 +101,10 @@ fn cmd_add_interactive(
             validate_terminal_entry(&entry, &root)?;
             config.terminals.push(entry);
             save_project_config(&config_path, &config)?;
-            println!("Added terminal '{name}'");
+            println!(
+                "{}",
+                ui::ok(format!("Added terminal {}", ui::paint(ui::BOLD, &name)))
+            );
         }
         "Application" => {
             let app = pick_application()?;
@@ -126,7 +131,13 @@ fn cmd_add_interactive(
             validate_app_entry(&entry)?;
             config.applications.push(entry);
             save_project_config(&config_path, &config)?;
-            println!("Added application '{}'", app.name);
+            println!(
+                "{}",
+                ui::ok(format!(
+                    "Added application {}",
+                    ui::paint(ui::BOLD, &app.name)
+                ))
+            );
         }
         _ => return Err("invalid selection".to_string()),
     }

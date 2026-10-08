@@ -2,6 +2,8 @@ use crate::config::{
     global_config_path, load_global_config, remove_config_with, resolve_project_config,
     save_global_config,
 };
+use crate::ui;
+use anstream::println;
 
 pub(crate) fn cmd_deregister(delete: bool) -> Result<(), String> {
     let cwd = std::env::current_dir().map_err(|e| e.to_string())?;
@@ -31,14 +33,20 @@ pub(crate) fn cmd_deregister(delete: bool) -> Result<(), String> {
         // ends up either fully deregistered or exactly as it started.
         remove_config_with(&config_path, || save_global_config(&global_path, &global))?;
         println!(
-            "Deregistered and deleted config for '{}'",
-            removed_name.unwrap_or_default()
+            "{}",
+            ui::ok(format!(
+                "Deregistered {} and deleted its .quickdev.toml",
+                ui::paint(ui::BOLD, removed_name.unwrap_or_default())
+            ))
         );
     } else {
         save_global_config(&global_path, &global)?;
         println!(
-            "Deregistered project '{}'",
-            removed_name.unwrap_or_default()
+            "{}",
+            ui::ok(format!(
+                "Deregistered project {}",
+                ui::paint(ui::BOLD, removed_name.unwrap_or_default())
+            ))
         );
     }
 

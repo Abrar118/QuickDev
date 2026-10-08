@@ -27,6 +27,7 @@ mod session_dir;
 mod tab_strategy;
 #[cfg_attr(not(target_os = "macos"), allow(dead_code))]
 mod terminal_app;
+mod ui;
 mod validate;
 
 use clap::Parser;
@@ -57,10 +58,10 @@ fn main() {
 
     if let Err(e) = result {
         if fzf::is_cancellation(&e) {
-            println!("Cancelled.");
+            anstream::println!("{}", ui::paint(ui::DIM, "Cancelled."));
             process::exit(0);
         }
-        eprintln!("error: {e}");
+        anstream::eprintln!("{} {e}", ui::paint(ui::RED.bold(), "error:"));
         process::exit(1);
     }
 }

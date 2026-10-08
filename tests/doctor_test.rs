@@ -1,6 +1,11 @@
 use quickdev::config::ProjectStatus;
 use quickdev::doctor::{doctor_has_errors, render_doctor, DoctorReport};
 
+/// Rendered output with ANSI styling removed, as it prints when piped.
+fn plain(styled: &str) -> String {
+    anstream::adapter::strip_str(styled).to_string()
+}
+
 fn status(name: &str, healthy: bool) -> ProjectStatus {
     ProjectStatus {
         name: name.to_string(),
@@ -18,7 +23,7 @@ fn all_healthy_has_no_errors_and_no_cross_mark() {
         projects: vec![status("api", true), status("web", true)],
     };
     assert!(!doctor_has_errors(&report));
-    let out = render_doctor(&report);
+    let out = plain(&render_doctor(&report));
     assert!(!out.contains('✗'), "no ✗ expected, got:\n{out}");
     assert!(out.contains("✓ api"));
 }
@@ -31,7 +36,7 @@ fn unhealthy_project_is_an_error() {
         projects: vec![status("api", true), status("dead", false)],
     };
     assert!(doctor_has_errors(&report));
-    let out = render_doctor(&report);
+    let out = plain(&render_doctor(&report));
     assert!(out.contains("✗ dead"));
 }
 
@@ -43,7 +48,7 @@ fn missing_fzf_is_warning_not_error() {
         projects: vec![status("api", true)],
     };
     assert!(!doctor_has_errors(&report));
-    let out = render_doctor(&report);
+    let out = plain(&render_doctor(&report));
     assert!(out.contains("⚠ fzf not found"));
 }
 
@@ -55,6 +60,6 @@ fn bad_global_config_is_error() {
         projects: vec![],
     };
     assert!(doctor_has_errors(&report));
-    let out = render_doctor(&report);
+    let out = plain(&render_doctor(&report));
     assert!(out.contains("✗ global config"));
 }

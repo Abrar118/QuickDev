@@ -305,10 +305,10 @@ fn render_results_formats_success_detail_and_failure() {
             detail: None,
         },
     ];
-    let out = render_results("Launched 2/3 items:", &results);
+    let out = render_results("Launched 2/3 items", &results);
     assert_eq!(
-        out,
-        "Launched 2/3 items:\n  ✓ terminal dev — /home/user/p · npm run dev\n  ✓ app Cursor — /Applications/Cursor.app\n  ✗ terminal logs — bad path\n"
+        anstream::adapter::strip_str(&out).to_string(),
+        "Launched 2/3 items\n\n  ✓ terminal  dev     /home/user/p · npm run dev\n  ✓ app       Cursor  /Applications/Cursor.app\n  ✗ terminal  logs    bad path\n"
     );
 }
 

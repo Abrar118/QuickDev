@@ -3,6 +3,8 @@ use crate::config::{
     save_global_config, save_project_config, unique_project_name,
 };
 use crate::models::{GlobalProjectEntry, ProjectConfig, ProjectEntry};
+use crate::ui;
+use anstream::println;
 use std::path::PathBuf;
 
 pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
@@ -30,7 +32,13 @@ pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
     if config_path.exists() && !already_indexed {
         let project_name = register_existing_project_config(&config_path, cwd_str, &mut global)?;
         save_global_config(&global_path, &global)?;
-        println!("Re-registered project '{}' in global index", project_name);
+        println!(
+            "{}",
+            ui::ok(format!(
+                "Re-registered project {} in the global index",
+                ui::paint(ui::BOLD, &project_name)
+            ))
+        );
         return Ok(());
     }
 
@@ -77,19 +85,31 @@ pub(crate) fn cmd_init(from: Option<String>) -> Result<(), String> {
         return Err(e);
     }
 
-    if from.is_some() {
-        println!(
-            "Initialized project '{}' from template in {}",
-            project_name,
-            cwd.display()
-        );
-    } else {
-        println!(
-            "Initialized project '{}' in {}",
-            project_name,
-            cwd.display()
-        );
-    }
-    println!("Global index updated at {}", global_path.display());
+    let template = if from.is_some() { " from template" } else { "" };
+    println!(
+        "{}",
+        ui::ok(format!(
+            "Initialized project {}{template} in {}",
+            ui::paint(ui::BOLD, &project_name),
+            ui::tilde(&cwd.to_string_lossy())
+        ))
+    );
+    println!(
+        "  {}",
+        ui::paint(
+            ui::DIM,
+            format!(
+                "Global index: {}",
+                ui::tilde(&global_path.to_string_lossy())
+            )
+        )
+    );
+    println!(
+        "  {}",
+        ui::paint(
+            ui::DIM,
+            "Next: 'quickdev add' to configure terminals and apps"
+        )
+    );
     Ok(())
 }

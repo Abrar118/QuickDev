@@ -21,6 +21,8 @@ shell-words = "1"
 tempfile = "3"
 toml_edit = "0.22"
 fd-lock = "4.0.4"
+anstream = "1"
+anstyle = "1"
 
 [target.'cfg(windows)'.dependencies]
 lnk = "0.5"
