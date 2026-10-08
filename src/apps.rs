@@ -253,6 +253,11 @@ fn installed_apps() -> Vec<AppEntry> {
 
 /// Recursively collect Start Menu `.lnk` shortcuts under `dir` whose target is
 /// an `.exe`. Windows I/O — not unit-tested.
+///
+/// Only real directories are descended into: `DirEntry::file_type` does not
+/// follow links, and on Windows its `is_dir()` is false for junctions and
+/// directory symlinks, so a junction cycle cannot recurse until the stack
+/// overflows.
 #[cfg(target_os = "windows")]
 fn collect_lnk_apps(dir: &std::path::Path, out: &mut Vec<AppEntry>) {
     let entries = match std::fs::read_dir(dir) {
@@ -261,7 +266,7 @@ fn collect_lnk_apps(dir: &std::path::Path, out: &mut Vec<AppEntry>) {
     };
     for entry in entries.flatten() {
         let path = entry.path();
-        if path.is_dir() {
+        if entry.file_type().is_ok_and(|t| t.is_dir()) {
             collect_lnk_apps(&path, out);
             continue;
         }
