@@ -14,4 +14,5 @@ pub mod parse;
 pub mod session_dir;
 pub mod tab_strategy;
 pub mod terminal_app;
+pub mod ui;
 pub mod validate;

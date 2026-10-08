@@ -110,7 +110,11 @@ pub fn prompt_to_enable_terminal_tabbing(declined: bool) -> PromptOutcome {
             return PromptOutcome::NoChange;
         }
 
-        print!("Enable Terminal.app tabs by setting AppleWindowTabbingMode=always? [y/N] ");
+        anstream::print!(
+            "{} Enable Terminal.app tabs by setting AppleWindowTabbingMode=always? {} ",
+            crate::ui::paint(crate::ui::CYAN.bold(), "?"),
+            crate::ui::paint(crate::ui::DIM, "[y/N]")
+        );
         let _ = io::stdout().flush();
 
         let mut answer = String::new();

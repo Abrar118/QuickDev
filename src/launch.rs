@@ -82,17 +82,36 @@ impl TabLaunchFailure {
 /// item. Success lines append ` — {detail}` when a detail is present; failure
 /// lines append ` — {error}`. Returns the full block (trailing newline included).
 pub fn render_results(header: &str, results: &[LaunchResult]) -> String {
-    let mut out = format!("{header}\n");
+    use crate::ui::{self, BOLD, DIM, RED};
+
+    let kind_width = results.iter().map(|r| r.kind.len()).max().unwrap_or(0);
+    let label_width = results
+        .iter()
+        .map(|r| r.label.chars().count())
+        .max()
+        .unwrap_or(0);
+
+    let mut out = format!("{}\n\n", ui::paint(BOLD, header));
     for r in results {
-        if r.success {
-            match &r.detail {
-                Some(detail) => out.push_str(&format!("  ✓ {} {} — {}\n", r.kind, r.label, detail)),
-                None => out.push_str(&format!("  ✓ {} {}\n", r.kind, r.label)),
-            }
+        let kind = ui::pad(DIM, r.kind, kind_width);
+        let tail = if r.success {
+            r.detail.as_deref().map(|d| ui::paint(DIM, d))
         } else {
-            let err = r.error.as_deref().unwrap_or("unknown error");
-            out.push_str(&format!("  ✗ {} {} — {}\n", r.kind, r.label, err));
-        }
+            Some(ui::paint(
+                RED,
+                r.error.as_deref().unwrap_or("unknown error"),
+            ))
+        };
+        let row = match tail {
+            Some(tail) => format!("{kind}  {}  {tail}", ui::pad(BOLD, &r.label, label_width)),
+            None => format!("{kind}  {}", ui::paint(BOLD, &r.label)),
+        };
+        let row = if r.success {
+            ui::ok(row)
+        } else {
+            ui::fail(row)
+        };
+        out.push_str(&format!("  {row}\n"));
     }
     out
 }
@@ -221,7 +240,7 @@ fn terminal_detail(resolved_path: &str, command: Option<&str>) -> String {
     }
 }
 
-fn make_placeholder_ctx(config: &ProjectConfig, project_root: &Path) -> PlaceholderContext {
+pub fn make_placeholder_ctx(config: &ProjectConfig, project_root: &Path) -> PlaceholderContext {
     PlaceholderContext {
         root: project_root.to_string_lossy().to_string(),
         config: project_root

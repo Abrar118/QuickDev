@@ -4,6 +4,8 @@ use crate::config::{
 };
 use crate::doctor::{doctor_has_errors, render_doctor, DoctorReport};
 use crate::fzf;
+use crate::ui;
+use anstream::{print, println};
 use std::path::PathBuf;
 
 pub(crate) fn cmd_doctor(fix: bool) -> Result<(), String> {
@@ -42,7 +44,13 @@ fn run_fix() -> Result<(), String> {
     if !global_path.exists() {
         let global = load_global_config(&global_path)?; // empty config when absent
         save_global_config(&global_path, &global)?;
-        println!("✓ created global config at {}", global_path.display());
+        println!(
+            "{}",
+            ui::ok(format!(
+                "created global config at {}",
+                global_path.display()
+            ))
+        );
     }
 
     // 2. Prune registrations whose path or .quickdev.toml is missing.
@@ -51,9 +59,12 @@ fn run_fix() -> Result<(), String> {
     if !removed.is_empty() {
         save_global_config(&global_path, &global)?;
         println!(
-            "✓ pruned {} dead registration(s): {}",
-            removed.len(),
-            removed.join(", ")
+            "{}",
+            ui::ok(format!(
+                "pruned {}: {}",
+                ui::count(removed.len(), "dead registration"),
+                removed.join(", ")
+            ))
         );
     }
 
@@ -62,10 +73,25 @@ fn run_fix() -> Result<(), String> {
         let config_path = PathBuf::from(&entry.path).join(".quickdev.toml");
         match load_project_config(&config_path) {
             Ok(cfg) => match save_project_config(&config_path, &cfg) {
-                Ok(()) => println!("✓ normalized {}", config_path.display()),
-                Err(e) => println!("⚠ could not normalize {}: {e}", config_path.display()),
+                Ok(()) => println!(
+                    "{}",
+                    ui::ok(format!("normalized {}", config_path.display()))
+                ),
+                Err(e) => println!(
+                    "{}",
+                    ui::warn(format!(
+                        "could not normalize {}: {e}",
+                        config_path.display()
+                    ))
+                ),
             },
-            Err(e) => println!("⚠ skipped {} (parse error): {e}", config_path.display()),
+            Err(e) => println!(
+                "{}",
+                ui::warn(format!(
+                    "skipped {} (parse error): {e}",
+                    config_path.display()
+                ))
+            ),
         }
     }
 

@@ -1,8 +1,9 @@
 use crate::fzf::sanitize_row;
 use crate::models::ProjectConfig;
+use crate::ui;
 
 pub(crate) fn prompt(message: &str) -> Result<String, String> {
-    eprint!("{message}");
+    anstream::eprint!("{} {message}", ui::paint(ui::CYAN.bold(), "?"));
     let mut input = String::new();
     std::io::stdin()
         .read_line(&mut input)

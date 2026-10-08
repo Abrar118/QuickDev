@@ -499,6 +499,8 @@ dependencies = [
 name = "quickdev"
 version = "0.4.1"
 dependencies = [
+ "anstream",
+ "anstyle",
  "clap",
  "dirs",
  "fd-lock",

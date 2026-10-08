@@ -10,6 +10,8 @@ use crate::models::ProjectConfig;
 use crate::terminal_app::{
     prompt_to_enable_terminal_tabbing, read_tabbing_preference, PromptOutcome, TabbingPreference,
 };
+use crate::ui;
+use anstream::{eprintln, print};
 use std::path::PathBuf;
 use std::process;
 
@@ -79,7 +81,10 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> R
         let would = plan.iter().filter(|r| r.success).count();
         print!(
             "{}",
-            render_results(&format!("Would launch {would} items:"), &plan)
+            render_results(
+                &format!("Dry run — would launch {}", ui::count(would, "item")),
+                &plan
+            )
         );
         return Ok(());
     }
@@ -90,7 +95,7 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> R
                 global.terminal_app_tabbing_prompt_declined = true;
                 save_global_config(&global_path, &global)?;
             }
-            PromptOutcome::WriteFailed(e) => eprintln!("{e}"),
+            PromptOutcome::WriteFailed(e) => eprintln!("{}", ui::warn(e)),
             PromptOutcome::Accepted | PromptOutcome::NoChange => {}
         }
     }
@@ -100,7 +105,7 @@ pub(crate) fn cmd_launch(project: Option<String>, all: bool, dry_run: bool) -> R
     print!(
         "{}",
         render_results(
-            &format!("Launched {success}/{} items:", results.len()),
+            &format!("Launched {success}/{}", ui::count(results.len(), "item")),
             &results
         )
     );

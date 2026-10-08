@@ -3,6 +3,8 @@ use crate::commands::shared::{build_item_display_list, selected_items};
 use crate::config::{load_project_config, resolve_project_config, save_project_config};
 use crate::fzf;
 use crate::models::ProjectConfig;
+use crate::ui;
+use anstream::println;
 use std::path::PathBuf;
 
 pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
@@ -17,7 +19,7 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
             if config.terminals.len() == before {
                 return Err(format!("terminal '{}' not found", name));
             }
-            format!("Removed terminal '{name}'")
+            format!("Removed terminal {}", ui::paint(ui::BOLD, &name))
         }
         Some(RemoveKind::App { name }) => {
             let before = config.applications.len();
@@ -25,7 +27,7 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
             if config.applications.len() == before {
                 return Err(format!("application '{}' not found", name));
             }
-            format!("Removed application '{name}'")
+            format!("Removed application {}", ui::paint(ui::BOLD, &name))
         }
         None => {
             return cmd_remove_interactive(config_path, config);
@@ -34,7 +36,7 @@ pub(crate) fn cmd_remove(kind: Option<RemoveKind>) -> Result<(), String> {
 
     // Announce only once the write succeeded — see the note in `add`.
     save_project_config(&config_path, &config)?;
-    println!("{announcement}");
+    println!("{}", ui::ok(announcement));
     Ok(())
 }
 
@@ -77,10 +79,16 @@ fn cmd_remove_interactive(config_path: PathBuf, mut config: ProjectConfig) -> Re
     save_project_config(&config_path, &config)?;
 
     for name in &removed_terminals {
-        println!("Removed terminal '{name}'");
+        println!(
+            "{}",
+            ui::ok(format!("Removed terminal {}", ui::paint(ui::BOLD, name)))
+        );
     }
     for name in &removed_apps {
-        println!("Removed application '{name}'");
+        println!(
+            "{}",
+            ui::ok(format!("Removed application {}", ui::paint(ui::BOLD, name)))
+        );
     }
 
     Ok(())

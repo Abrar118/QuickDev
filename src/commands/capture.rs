@@ -3,6 +3,8 @@ use crate::capture::{detect_running_apps, detected_to_apps, merge_apps};
 use crate::config;
 use crate::fzf;
 use crate::models::AppEntry;
+use crate::ui;
+use anstream::println;
 
 pub(crate) fn cmd_capture(all: bool) -> Result<(), String> {
     // Fail fast off-macOS before any filesystem or picker work.
@@ -28,7 +30,13 @@ pub(crate) fn cmd_capture(all: bool) -> Result<(), String> {
     let new_candidates = merge_apps(&project.applications, &candidates);
 
     if new_candidates.is_empty() {
-        println!("Nothing new to capture (no running apps, or all already configured).");
+        println!(
+            "{}",
+            ui::paint(
+                ui::DIM,
+                "Nothing new to capture (no running apps, or all already configured)."
+            )
+        );
         return Ok(());
     }
 
@@ -39,7 +47,13 @@ pub(crate) fn cmd_capture(all: bool) -> Result<(), String> {
     let count = selected.len();
     project.applications.extend(selected);
     config::save_project_config(&config_path, &project)?;
-    println!("✓ Added {count} app(s) to .quickdev.toml");
+    println!(
+        "{}",
+        ui::ok(format!(
+            "Added {} to .quickdev.toml",
+            ui::count(count, "app")
+        ))
+    );
     Ok(())
 }
 
