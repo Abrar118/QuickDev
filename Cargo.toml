@@ -10,7 +10,8 @@ keywords = ["cli", "terminal", "launcher", "developer-tools", "productivity"]
 categories = ["command-line-utilities", "development-tools"]
 rust-version = "1.85"
 # Release/packaging tooling and internal docs — not part of the published source crate.
-exclude = ["packaging/", ".github/", "CLAUDE.md", "AGENTS.md"]
+# The Go port (go.mod, cmd/, internal/) ships through `go install`, not the crate.
+exclude = ["packaging/", ".github/", "CLAUDE.md", "AGENTS.md", "go.mod", "go.sum", "cmd/", "internal/"]
 
 [dependencies]
 clap = { version = "4", features = ["derive"] }
